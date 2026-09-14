@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
 )
 
@@ -13,10 +14,30 @@ type PushDeviceRepository struct{ db Querier }
 
 func NewPushDeviceRepository(db Querier) *PushDeviceRepository { return &PushDeviceRepository{db: db} }
 func (r *PushDeviceRepository) Upsert(ctx context.Context, d *pushdevice.PushDevice) error {
-	const q = `INSERT INTO push_devices (id,user_id,destination,platform,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (destination) DO UPDATE SET user_id=EXCLUDED.user_id, platform=EXCLUDED.platform, updated_at=EXCLUDED.updated_at RETURNING id, user_id, destination, platform, created_at, updated_at`
+	const q = `INSERT INTO push_devices (id,user_id,destination,platform,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (destination) DO UPDATE SET platform=EXCLUDED.platform, updated_at=EXCLUDED.updated_at WHERE push_devices.user_id=EXCLUDED.user_id RETURNING id, user_id, destination, platform, created_at, updated_at`
 	var platform string
 	if err := r.db.QueryRow(ctx, q, d.ID, d.UserID, d.Destination, string(d.Platform), d.CreatedAt, d.UpdatedAt).Scan(&d.ID, &d.UserID, &d.Destination, &platform, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pushdevice.ErrDestinationOwned
+		}
 		return fmt.Errorf("postgres: upsert push device: %w", err)
+	}
+	d.Platform = pushdevice.Platform(platform)
+	return nil
+}
+
+func (r *PushDeviceRepository) Update(ctx context.Context, d *pushdevice.PushDevice) error {
+	const q = `UPDATE push_devices SET destination=$3, platform=$4, updated_at=$5 WHERE id=$1 AND user_id=$2 RETURNING id,user_id,destination,platform,created_at,updated_at`
+	var platform string
+	if err := r.db.QueryRow(ctx, q, d.ID, d.UserID, d.Destination, string(d.Platform), d.UpdatedAt).Scan(&d.ID, &d.UserID, &d.Destination, &platform, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pushdevice.ErrNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return pushdevice.ErrDestinationOwned
+		}
+		return fmt.Errorf("postgres: update push device: %w", err)
 	}
 	d.Platform = pushdevice.Platform(platform)
 	return nil
@@ -42,6 +63,14 @@ func (r *PushDeviceRepository) Delete(ctx context.Context, id, userID uuid.UUID)
 	}
 	if tag.RowsAffected() == 0 {
 		return pushdevice.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PushDeviceRepository) DeleteByDestination(ctx context.Context, destination string) error {
+	const q = `DELETE FROM push_devices WHERE destination=$1`
+	if _, err := r.db.Exec(ctx, q, destination); err != nil {
+		return fmt.Errorf("postgres: delete stale push device: %w", err)
 	}
 	return nil
 }

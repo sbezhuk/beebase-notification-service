@@ -29,10 +29,6 @@ type registerRequest struct {
 	Destination string              `json:"destination"`
 	Platform    pushdevice.Platform `json:"platform"`
 }
-type sendRequest struct {
-	Destination, Title, Body string
-	Data                     map[string]string `json:"data"`
-}
 
 func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.AccessTokenParser) http.Handler {
 	r := chi.NewRouter()
@@ -45,9 +41,9 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 	r.Route("/api/v1/devices", func(r chi.Router) {
 		r.Use(authmw.RequireAuth(parser))
 		r.Post("/", h.Register)
+		r.Put("/{deviceID}", h.Update)
 		r.Delete("/{deviceID}", h.Remove)
 	})
-	r.Route("/api/v1/notifications", func(r chi.Router) { r.Use(authmw.RequireAuth(parser)); r.Post("/test", h.SendTest) })
 	return r
 }
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +59,42 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := h.service.RegisterDevice(r.Context(), uid, req.Destination, req.Platform)
 	if err != nil {
+		if errors.Is(err, pushdevice.ErrDestinationOwned) {
+			httpx.WriteError(w, http.StatusConflict, "destination_owned", "notification destination is already registered to another user")
+			return
+		}
 		httpx.WriteError(w, 400, "invalid_device", err.Error())
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, d)
+}
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "invalid JSON")
+		return
+	}
+	uid, ok := authmw.UserIDFromContext(r.Context())
+	if !ok {
+		httpx.WriteError(w, http.StatusInternalServerError, "missing_identity", "authenticated identity missing")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "deviceID"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_device_id", "invalid device id")
+		return
+	}
+	d, err := h.service.UpdateDevice(r.Context(), uid, id, req.Destination, req.Platform)
+	if err != nil {
+		if errors.Is(err, pushdevice.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, pushdevice.ErrDestinationOwned) {
+			httpx.WriteError(w, http.StatusConflict, "destination_owned", "notification destination is already registered to another user")
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_device", err.Error())
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, d)
@@ -88,35 +119,6 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
-	var req sendRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.WriteError(w, 400, "invalid_request", "invalid JSON")
-		return
-	}
-	if err := h.service.Send(r.Context(), appnotification.PushMessage{Destination: req.Destination, Title: req.Title, Body: req.Body, Data: req.Data}); err != nil {
-		var deliveryErr *appnotification.DeliveryError
-		if errors.As(err, &deliveryErr) {
-			switch deliveryErr.Kind {
-			case appnotification.DeliveryInvalidDestination:
-				httpx.WriteError(w, http.StatusBadRequest, string(deliveryErr.Kind), "invalid notification destination")
-				return
-			case appnotification.DeliveryUnregistered:
-				httpx.WriteError(w, http.StatusGone, string(deliveryErr.Kind), "notification destination is no longer registered")
-				return
-			case appnotification.DeliveryAuthentication:
-				httpx.WriteError(w, http.StatusServiceUnavailable, string(deliveryErr.Kind), "notification provider authentication failed")
-				return
-			case appnotification.DeliveryTemporary:
-				httpx.WriteError(w, http.StatusServiceUnavailable, string(deliveryErr.Kind), "notification provider is temporarily unavailable")
-				return
-			}
-		}
-		httpx.WriteError(w, http.StatusBadGateway, "send_failed", "could not send notification")
-		return
-	}
-	httpx.WriteJSON(w, http.StatusAccepted, statusResponse{Status: "accepted"})
 }
 func requestLogger(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

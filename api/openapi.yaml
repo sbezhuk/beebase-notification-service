@@ -1,43 +1,197 @@
 openapi: 3.0.3
 info:
-  title: BeeBase Notification Service
-  version: 1.0.0
+  title: BeeBase Notification Service API
+  description: >
+    Push-device lifecycle service for BeeBase. Access tokens are issued by
+    auth-service; this service uses only the verified authenticated user ID
+    and never trusts a user ID from a request body.
+  version: 0.2.0
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: system
+    description: Liveness and readiness probes.
+  - name: devices
+    description: Register, update, and unregister push destinations.
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
+      tags: [system]
+      summary: Liveness probe
+      security: []
       responses:
-        '200': {description: Service is alive}
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
   /ready:
     get:
+      tags: [system]
+      summary: Readiness probe
+      security: []
       responses:
-        '200': {description: Database is reachable}
+        "200":
+          description: The service and database are ready.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
+        "503":
+          description: The database is unreachable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResponse" }
   /api/v1/devices:
     post:
-      security: [{bearerAuth: []}]
+      tags: [devices]
+      summary: Register or refresh the authenticated user's current device
+      description: >
+        Registers the destination explicitly after authentication or startup.
+        Repeating the request for the same destination and user is idempotent.
+        A user may register multiple devices. The destination is a Firebase
+        Installation ID (FID), not an access token and not a user ID.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [destination, platform]
-              properties:
-                destination: {type: string, description: Firebase Installation ID (FID)}
-                platform: {type: string, enum: [ios, android]}
+            schema: { $ref: "#/components/schemas/DeviceRequest" }
       responses:
-        '200': {description: Registered device}
+        "200":
+          description: The device was registered or refreshed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushDevice" }
+        "400":
+          description: The request failed validation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Missing, invalid, or expired access token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The destination is currently owned by another user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/devices/{deviceID}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+    put:
+      tags: [devices]
+      summary: Update a registered device destination
+      description: >
+        Replaces the destination and/or platform for a device owned by the
+        authenticated user. Flutter should use this when Firebase rotates or
+        changes the current installation ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceRequest" }
+      responses:
+        "200":
+          description: The device was updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushDevice" }
+        "400":
+          description: The request failed validation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Missing, invalid, or expired access token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: The device does not belong to the authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The replacement destination is owned by another user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: deviceID, in: path, required: true, schema: {type: string, format: uuid}}
+      tags: [devices]
+      summary: Unregister a device
+      description: >
+        Removes the device owned by the authenticated user. Flutter should
+        call this on logout or when the user opts out of push notifications.
       responses:
-        '204': {description: Removed device}
-  /api/v1/notifications/test:
-    post:
-      security: [{bearerAuth: []}]
-      responses:
-        '202': {description: Notification accepted}
+        "204": { description: The device was removed. }
+        "401":
+          description: Missing, invalid, or expired access token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: The device does not belong to the authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 components:
+  parameters:
+    DeviceID:
+      name: deviceID
+      in: path
+      required: true
+      description: The device UUID returned by registration.
+      schema: { type: string, format: uuid }
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer}
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+    DeviceRequest:
+      type: object
+      required: [destination, platform]
+      properties:
+        destination:
+          type: string
+          minLength: 1
+          description: Firebase Installation ID (FID) for the current app installation.
+        platform:
+          type: string
+          enum: [ios, android]
+    PushDevice:
+      type: object
+      required: [id, user_id, destination, platform, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid, description: Authenticated owner of the device. }
+        destination: { type: string, description: Firebase Installation ID (FID). }
+        platform: { type: string, enum: [ios, android] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - missing_authorization
+                - invalid_access_token
+                - invalid_request
+                - invalid_device
+                - invalid_device_id
+                - destination_owned
+                - internal_error
+            message: { type: string, example: request validation failed }

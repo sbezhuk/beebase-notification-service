@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
@@ -19,11 +20,8 @@ func NewService(devices pushdevice.Repository, sender PushSender) *Service {
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, userID uuid.UUID, destination string, platform pushdevice.Platform) (*pushdevice.PushDevice, error) {
-	if strings.TrimSpace(destination) == "" {
-		return nil, fmt.Errorf("destination is required")
-	}
-	if platform != pushdevice.PlatformIOS && platform != pushdevice.PlatformAndroid {
-		return nil, fmt.Errorf("platform must be ios or android")
+	if err := validateDevice(destination, platform); err != nil {
+		return nil, err
 	}
 	now := time.Now().UTC()
 	d := &pushdevice.PushDevice{ID: uuid.New(), UserID: userID, Destination: destination, Platform: platform, CreatedAt: now, UpdatedAt: now}
@@ -31,6 +29,27 @@ func (s *Service) RegisterDevice(ctx context.Context, userID uuid.UUID, destinat
 		return nil, fmt.Errorf("register device: %w", err)
 	}
 	return d, nil
+}
+
+func (s *Service) UpdateDevice(ctx context.Context, userID, id uuid.UUID, destination string, platform pushdevice.Platform) (*pushdevice.PushDevice, error) {
+	if err := validateDevice(destination, platform); err != nil {
+		return nil, err
+	}
+	d := &pushdevice.PushDevice{ID: id, UserID: userID, Destination: destination, Platform: platform, UpdatedAt: time.Now().UTC()}
+	if err := s.devices.Update(ctx, d); err != nil {
+		return nil, fmt.Errorf("update device: %w", err)
+	}
+	return d, nil
+}
+
+func validateDevice(destination string, platform pushdevice.Platform) error {
+	if strings.TrimSpace(destination) == "" {
+		return fmt.Errorf("destination is required")
+	}
+	if platform != pushdevice.PlatformIOS && platform != pushdevice.PlatformAndroid {
+		return fmt.Errorf("platform must be ios or android")
+	}
+	return nil
 }
 func (s *Service) RemoveDevice(ctx context.Context, id, userID uuid.UUID) error {
 	if err := s.devices.Delete(ctx, id, userID); err != nil {
@@ -45,5 +64,12 @@ func (s *Service) Send(ctx context.Context, m PushMessage) error {
 	if strings.TrimSpace(m.Title) == "" || strings.TrimSpace(m.Body) == "" {
 		return fmt.Errorf("title and body are required")
 	}
-	return s.sender.Send(ctx, m)
+	err := s.sender.Send(ctx, m)
+	var deliveryErr *DeliveryError
+	if errors.As(err, &deliveryErr) && (deliveryErr.Kind == DeliveryInvalidDestination || deliveryErr.Kind == DeliveryUnregistered) {
+		// A definitive provider response means this destination cannot be used
+		// again. Cleanup is deliberately not attempted for transient failures.
+		_ = s.devices.DeleteByDestination(ctx, m.Destination)
+	}
+	return err
 }

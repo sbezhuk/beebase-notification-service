@@ -4,7 +4,9 @@ Stores BeeBase users' push destinations and sends Firebase Cloud Messaging HTTP 
 
 Production configuration is provisioned at `/opt/beebase/config/notification.env` with mode `0600`. The database is `beebase_notification`, and its password variable is exactly `POSTGRES_NOTIFICATION_PASSWORD`. Firebase credentials are supplied as base64-encoded JSON in `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`; the application decodes it in configuration/bootstrap code and never logs it. Apple variables use the subscription-service names (`APPLE_BUNDLE_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_PRIVATE_KEY`, `APPLE_ENVIRONMENT`) for future APNs compatibility.
 
-Authenticated routes are `POST /api/v1/devices`, `DELETE /api/v1/devices/{id}`, and `POST /api/v1/notifications/test`. Operational routes are `/health` and `/ready`. The destination currently represents an FCM Installation ID (FID), using the SDK's current `Message.Fid` field (Admin SDK v4.21.0); Flutter must register the FID rather than a legacy registration token.
+Authenticated routes are `POST /api/v1/devices`, `PUT /api/v1/devices/{id}`, and `DELETE /api/v1/devices/{id}`. Registration is explicit and independent of login/token refresh: Flutter calls it after authentication/startup and stores the returned device UUID. It calls `PUT` when Firebase rotates the destination and `DELETE` on logout or push opt-out. Operational routes are `/health` and `/ready`.
+
+The destination represents an FCM Installation ID (FID), using the SDK's current `Message.Fid` field (Admin SDK v4.21.0); Flutter must register the FID rather than a legacy registration token. A destination is unique and cannot be silently claimed by another user. Definitive Firebase unregistered/invalid responses trigger best-effort deletion of that destination; temporary provider failures never delete it. There is no public notification test endpoint.
 
 For local setup, copy `.env.example` to `.env`, set non-secret values, and derive the ignored Firebase value from the local service-account file without printing it:
 

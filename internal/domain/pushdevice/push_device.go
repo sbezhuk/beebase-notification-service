@@ -8,6 +8,7 @@ import (
 )
 
 var ErrNotFound = errors.New("push device not found")
+var ErrDestinationOwned = errors.New("push destination belongs to another user")
 
 type Platform string
 
@@ -25,6 +26,8 @@ type PushDevice struct {
 
 type Repository interface {
 	Upsert(ctx context.Context, d *PushDevice) error
+	Update(ctx context.Context, d *PushDevice) error
 	FindByID(ctx context.Context, id, userID uuid.UUID) (*PushDevice, error)
 	Delete(ctx context.Context, id, userID uuid.UUID) error
+	DeleteByDestination(ctx context.Context, destination string) error
 }
