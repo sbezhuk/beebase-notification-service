@@ -1,4 +1,6 @@
-FROM golang:1.27-alpine AS builder
+# Build the Go binary on the runner's native platform; only the final
+# runtime image is arm64. This avoids running the Go toolchain under QEMU.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
