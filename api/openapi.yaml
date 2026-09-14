@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: BeeBase Notification Service
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      responses:
+        '200': {description: Service is alive}
+  /ready:
+    get:
+      responses:
+        '200': {description: Database is reachable}
+  /api/v1/devices:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination, platform]
+              properties:
+                destination: {type: string, description: Firebase Installation ID (FID)}
+                platform: {type: string, enum: [ios, android]}
+      responses:
+        '200': {description: Registered device}
+  /api/v1/devices/{deviceID}:
+    delete:
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: deviceID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Removed device}
+  /api/v1/notifications/test:
+    post:
+      security: [{bearerAuth: []}]
+      responses:
+        '202': {description: Notification accepted}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}

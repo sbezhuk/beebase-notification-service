@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD:-beebase}
+      POSTGRES_DB: ${POSTGRES_DB:-beebase_notification}
+    ports: ["5439:5432"]
+    volumes: [notification_postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${POSTGRES_DB:-beebase_notification}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on: {postgres: {condition: service_healthy}}
+    volumes: [./migrations:/migrations:ro]
+    entrypoint: ["sh", "-c"]
+    command: ['migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_NOTIFICATION_PASSWORD:-beebase}@postgres:5432/${POSTGRES_DB:-beebase_notification}?sslmode=disable" up']
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_NOTIFICATION_PASSWORD:-beebase}@postgres:5432/${POSTGRES_DB:-beebase_notification}?sslmode=disable
+      AUTH_JWKS_URL: http://host.docker.internal:8081/.well-known/jwks.json
+      REDIS_ADDR: host.docker.internal:6379
+    ports: ["8089:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+volumes:
+  notification_postgres_data:

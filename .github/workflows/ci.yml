@@ -1,0 +1,62 @@
+name: CI
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: read
+  id-token: write
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: beebase-notification-service
+jobs:
+  code-quality-and-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: "1.27"}
+      - run: go vet ./...
+      - run: go test ./...
+  build-and-push:
+    needs: code-quality-and-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC - no long-lived keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-qemu-action@v3
+        with: {platforms: arm64}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Build and push migration image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.migrate
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-migrate
+      - name: Print production image summary
+        run: |
+          {
+            echo "## Production image built successfully"
+            echo ""
+            echo "**Service:** ${{ env.ECR_REPOSITORY }}"
+            echo "**Git tag:** ${{ github.ref_name }}"
+            echo "**Commit SHA:** \`${{ github.sha }}\`"
+            echo ""
+            echo "Use this SHA for the production release: \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
