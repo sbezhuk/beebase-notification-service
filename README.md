@@ -1,5 +1,5 @@
 # beebase-notification-service
-
+ 
 Stores BeeBase users' push destinations and sends Firebase Cloud Messaging HTTP v1 notifications through the official Firebase Admin SDK for Go.
 
 Production configuration is provisioned at `/opt/beebase/config/notification.env` with mode `0600`. The database is `beebase_notification`, and its password variable is exactly `POSTGRES_NOTIFICATION_PASSWORD`. Firebase credentials are supplied as base64-encoded JSON in `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`; the application decodes it in configuration/bootstrap code and never logs it. Apple variables use the subscription-service names (`APPLE_BUNDLE_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_PRIVATE_KEY`, `APPLE_ENVIRONMENT`) for future APNs compatibility.
