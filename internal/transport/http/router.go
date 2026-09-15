@@ -40,11 +40,11 @@ type registerRequest struct {
 
 type pushDeviceResponse struct {
 	ID          uuid.UUID           `json:"id"`
-	UserID      uuid.UUID           `json:"user_id"`
+	UserID      uuid.UUID           `json:"userId"`
 	Destination string              `json:"destination"`
 	Platform    pushdevice.Platform `json:"platform"`
-	CreatedAt   time.Time           `json:"created_at"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	CreatedAt   time.Time           `json:"createdAt"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
 }
 
 func newPushDeviceResponse(d *pushdevice.PushDevice) pushDeviceResponse {
@@ -91,9 +91,9 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 type reminderRequest struct {
 	Title      string              `json:"title"`
 	Note       string              `json:"note"`
-	EntityType reminder.EntityType `json:"entity_type"`
-	EntityID   uuid.UUID           `json:"entity_id"`
-	RemindAt   time.Time           `json:"remind_at"`
+	EntityType reminder.EntityType `json:"entityType"`
+	EntityID   uuid.UUID           `json:"entityId"`
+	RemindAt   time.Time           `json:"remindAt"`
 }
 
 func (h *Handler) CreateReminder(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +152,7 @@ func (h *Handler) ListReminders(w http.ResponseWriter, r *http.Request) {
 	}
 	f := reminder.Filter{Page: p.Page, Limit: p.Limit}
 	q := r.URL.Query()
-	if x := q.Get("entity_type"); x != "" {
+	if x := q.Get("entityType"); x != "" {
 		v := reminder.EntityType(x)
 		if !v.Valid() {
 			httpx.WriteError(w, 400, "invalid_entity_type", "invalid entity type")
@@ -160,7 +160,7 @@ func (h *Handler) ListReminders(w http.ResponseWriter, r *http.Request) {
 		}
 		f.EntityType = &v
 	}
-	if x := q.Get("entity_id"); x != "" {
+	if x := q.Get("entityId"); x != "" {
 		v, e := uuid.Parse(x)
 		if e != nil {
 			httpx.WriteError(w, 400, "invalid_entity_id", "invalid entity id")
