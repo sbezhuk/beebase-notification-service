@@ -127,7 +127,7 @@ func assertPushDeviceResponseKeys(t *testing.T, body []byte) {
 		t.Fatal(err)
 	}
 
-	expected := []string{"created_at", "destination", "id", "platform", "updated_at", "user_id"}
+	expected := []string{"createdAt", "destination", "id", "platform", "updatedAt", "userId"}
 	actual := make([]string, 0, len(response))
 	for key := range response {
 		actual = append(actual, key)

@@ -144,8 +144,8 @@ paths:
       tags: [reminders]
       summary: List the authenticated user's reminders
       parameters:
-        - {name: entity_type, in: query, schema: {type: string, enum: [apiary, hive, inspection, harvest]}}
-        - {name: entity_id, in: query, schema: {type: string, format: uuid}}
+        - {name: entityType, in: query, schema: {type: string, enum: [apiary, hive, inspection, harvest]}}
+        - {name: entityId, in: query, schema: {type: string, format: uuid}}
         - {name: status, in: query, schema: {type: string, enum: [scheduled, processing, sent, cancelled, failed]}}
         - {name: page, in: query, schema: {type: integer, minimum: 1}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
@@ -204,40 +204,40 @@ components:
           enum: [ios, android]
     PushDevice:
       type: object
-      required: [id, user_id, destination, platform, created_at, updated_at]
+      required: [id, userId, destination, platform, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
-        user_id: { type: string, format: uuid, description: Authenticated owner of the device. }
+        userId: { type: string, format: uuid, description: Authenticated owner of the device. }
         destination: { type: string, description: Firebase Installation ID (FID). }
         platform: { type: string, enum: [ios, android] }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ReminderRequest:
       type: object
-      required: [title, entity_type, entity_id, remind_at]
+      required: [title, entityType, entityId, remindAt]
       properties:
         title: {type: string, minLength: 1, maxLength: 200}
         note: {type: string, maxLength: 2000}
-        entity_type: {type: string, enum: [apiary, hive, inspection, harvest]}
-        entity_id: {type: string, format: uuid}
-        remind_at: {type: string, format: date-time, description: UTC instant; offsets are normalized to UTC.}
+        entityType: {type: string, enum: [apiary, hive, inspection, harvest]}
+        entityId: {type: string, format: uuid}
+        remindAt: {type: string, format: date-time, description: UTC instant; offsets are normalized to UTC.}
     Reminder:
       allOf:
         - $ref: "#/components/schemas/ReminderRequest"
         - type: object
-          required: [id, user_id, reminder_type, source, status, created_at, updated_at]
+          required: [id, userId, reminderType, source, status, createdAt, updatedAt]
           properties:
             id: {type: string, format: uuid}
-            user_id: {type: string, format: uuid}
-            reminder_type: {type: string, enum: [custom]}
+            userId: {type: string, format: uuid}
+            reminderType: {type: string, enum: [custom]}
             source: {type: string, enum: [manual, system]}
             status: {type: string, enum: [scheduled, processing, sent, cancelled, failed]}
-            cancel_reason: {type: string, nullable: true}
-            attempt_count: {type: integer}
-            next_attempt_at: {type: string, format: date-time}
-            last_error: {type: string, nullable: true}
-            created_at: {type: string, format: date-time}
-            updated_at: {type: string, format: date-time}
+            cancelReason: {type: string, nullable: true}
+            attemptCount: {type: integer}
+            nextAttemptAt: {type: string, format: date-time}
+            lastError: {type: string, nullable: true}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
     ReminderPage:
       type: object
       required: [items, pagination]

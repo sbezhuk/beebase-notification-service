@@ -33,23 +33,23 @@ const (
 
 type Reminder struct {
 	ID                   uuid.UUID  `json:"id"`
-	UserID               uuid.UUID  `json:"user_id"`
+	UserID               uuid.UUID  `json:"userId"`
 	Title                string     `json:"title"`
 	Note                 string     `json:"note"`
-	EntityType           EntityType `json:"entity_type"`
-	EntityID             uuid.UUID  `json:"entity_id"`
-	ReminderType         string     `json:"reminder_type"`
+	EntityType           EntityType `json:"entityType"`
+	EntityID             uuid.UUID  `json:"entityId"`
+	ReminderType         string     `json:"reminderType"`
 	Source               string     `json:"source"`
-	RemindAt             time.Time  `json:"remind_at"`
+	RemindAt             time.Time  `json:"remindAt"`
 	Status               Status     `json:"status"`
-	CancelReason         *string    `json:"cancel_reason,omitempty"`
-	AttemptCount         int        `json:"attempt_count"`
-	NextAttemptAt        time.Time  `json:"next_attempt_at"`
-	LastError            *string    `json:"last_error,omitempty"`
+	CancelReason         *string    `json:"cancelReason,omitempty"`
+	AttemptCount         int        `json:"attemptCount"`
+	NextAttemptAt        time.Time  `json:"nextAttemptAt"`
+	LastError            *string    `json:"lastError,omitempty"`
 	ProcessingToken      uuid.UUID  `json:"-"`
 	ProcessingLeaseUntil *time.Time `json:"-"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
 }
 
 var ErrNotFound = errors.New("reminder not found")
