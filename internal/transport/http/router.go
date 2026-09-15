@@ -38,6 +38,26 @@ type registerRequest struct {
 	Platform    pushdevice.Platform `json:"platform"`
 }
 
+type pushDeviceResponse struct {
+	ID          uuid.UUID           `json:"id"`
+	UserID      uuid.UUID           `json:"user_id"`
+	Destination string              `json:"destination"`
+	Platform    pushdevice.Platform `json:"platform"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
+}
+
+func newPushDeviceResponse(d *pushdevice.PushDevice) pushDeviceResponse {
+	return pushDeviceResponse{
+		ID:          d.ID,
+		UserID:      d.UserID,
+		Destination: d.Destination,
+		Platform:    d.Platform,
+		CreatedAt:   d.CreatedAt,
+		UpdatedAt:   d.UpdatedAt,
+	}
+}
+
 func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.AccessTokenParser, internalTokens ...string) http.Handler {
 	internalToken := ""
 	if len(internalTokens) > 0 {
@@ -250,7 +270,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 400, "invalid_device", err.Error())
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, d)
+	httpx.WriteJSON(w, http.StatusOK, newPushDeviceResponse(d))
 }
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
@@ -281,7 +301,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_device", err.Error())
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, d)
+	httpx.WriteJSON(w, http.StatusOK, newPushDeviceResponse(d))
 }
 func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 	uid, ok := authmw.UserIDFromContext(r.Context())
