@@ -74,3 +74,22 @@ func (r *PushDeviceRepository) DeleteByDestination(ctx context.Context, destinat
 	}
 	return nil
 }
+
+func (r *PushDeviceRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]pushdevice.PushDevice, error) {
+	rows, err := r.db.Query(ctx, `SELECT id,user_id,destination,platform,created_at,updated_at FROM push_devices WHERE user_id=$1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []pushdevice.PushDevice
+	for rows.Next() {
+		var d pushdevice.PushDevice
+		var p string
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Destination, &p, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		d.Platform = pushdevice.Platform(p)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

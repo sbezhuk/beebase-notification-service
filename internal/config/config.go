@@ -22,6 +22,8 @@ type Config struct {
 	AuthJWKSURL                                                                 string
 	RedisAddr                                                                   string
 	RedisConnectTimeout                                                         time.Duration
+	ApiaryServiceURL, HiveServiceURL, InspectionServiceURL, HarvestServiceURL   string
+	ReminderWorkerInterval                                                      time.Duration
 }
 
 func Load() (*Config, error) {
@@ -42,6 +44,7 @@ func Load() (*Config, error) {
 		FirebaseProjectID: getEnv("FIREBASE_PROJECT_ID", ""),
 		AppleBundleID:     getEnv("APPLE_BUNDLE_ID", "com.beebase.production"), AppleKeyID: getEnv("APPLE_KEY_ID", ""), AppleIssuerID: getEnv("APPLE_ISSUER_ID", ""), ApplePrivateKey: getEnv("APPLE_PRIVATE_KEY", ""), AppleEnvironment: appleEnv,
 		AuthJWKSURL: getEnv("AUTH_JWKS_URL", ""), RedisAddr: getEnv("REDIS_ADDR", ""), RedisConnectTimeout: getDuration("REDIS_CONNECT_TIMEOUT", 5*time.Second),
+		ApiaryServiceURL: getEnv("APIARY_SERVICE_URL", "http://apiary-service:8080"), HiveServiceURL: getEnv("HIVE_SERVICE_URL", "http://hive-service:8080"), InspectionServiceURL: getEnv("INSPECTION_SERVICE_URL", "http://inspection-service:8080"), HarvestServiceURL: getEnv("HARVEST_SERVICE_URL", "http://harvest-service:8080"), ReminderWorkerInterval: getDuration("REMINDER_WORKER_INTERVAL", 30*time.Second),
 	}
 
 	if cfg.DatabaseURL == "" {
