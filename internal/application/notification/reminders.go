@@ -56,7 +56,11 @@ func (s *ReminderService) Create(ctx context.Context, user uuid.UUID, in CreateR
 		return nil, fmt.Errorf("remind_at is required")
 	}
 	now := time.Now().UTC()
-	v := &reminder.Reminder{ID: uuid.New(), UserID: user, Title: strings.TrimSpace(in.Title), Note: in.Note, EntityType: in.EntityType, EntityID: in.EntityID, ReminderType: "custom", Source: "manual", RemindAt: in.RemindAt.UTC(), Status: reminder.StatusScheduled, AttemptCount: 0, NextAttemptAt: in.RemindAt.UTC(), CreatedAt: now, UpdatedAt: now}
+	remindAt := in.RemindAt.UTC()
+	if !remindAt.After(now) {
+		return nil, fmt.Errorf("remind_at must be in the future")
+	}
+	v := &reminder.Reminder{ID: uuid.New(), UserID: user, Title: strings.TrimSpace(in.Title), Note: in.Note, EntityType: in.EntityType, EntityID: in.EntityID, ReminderType: "custom", Source: "manual", RemindAt: remindAt, Status: reminder.StatusScheduled, AttemptCount: 0, NextAttemptAt: remindAt, CreatedAt: now, UpdatedAt: now}
 	if err := s.reminders.Create(ctx, v); err != nil {
 		return nil, err
 	}
@@ -80,7 +84,11 @@ func (s *ReminderService) Update(ctx context.Context, user, id uuid.UUID, in Cre
 	v.Note = in.Note
 	v.EntityType = in.EntityType
 	v.EntityID = in.EntityID
-	v.RemindAt = in.RemindAt.UTC()
+	remindAt := in.RemindAt.UTC()
+	if !remindAt.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("remind_at must be in the future")
+	}
+	v.RemindAt = remindAt
 	v.NextAttemptAt = v.RemindAt
 	v.Status = reminder.StatusScheduled
 	v.CancelReason = nil

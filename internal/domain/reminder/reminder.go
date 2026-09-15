@@ -2,6 +2,7 @@ package reminder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -50,6 +51,19 @@ type Reminder struct {
 	ProcessingLeaseUntil *time.Time `json:"-"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+// MarshalJSON keeps all externally visible reminder instants canonical on the
+// wire. The values remain absolute time.Time instants; this only controls the
+// representation emitted by the API.
+func (r Reminder) MarshalJSON() ([]byte, error) {
+	type jsonReminder Reminder
+	v := jsonReminder(r)
+	v.RemindAt = r.RemindAt.UTC()
+	v.NextAttemptAt = r.NextAttemptAt.UTC()
+	v.CreatedAt = r.CreatedAt.UTC()
+	v.UpdatedAt = r.UpdatedAt.UTC()
+	return json.Marshal(v)
 }
 
 var ErrNotFound = errors.New("reminder not found")

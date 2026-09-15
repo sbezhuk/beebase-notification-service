@@ -3,6 +3,7 @@ package notification
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -207,6 +208,77 @@ func TestReminderCRUDOwnershipAndFiltering(t *testing.T) {
 	}
 	if err := svc.Delete(context.Background(), user, v.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateNormalizesEquivalentOffsetInstantsToUTC(t *testing.T) {
+	user := uuid.New()
+	base := time.Date(2030, time.March, 31, 1, 30, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+	}{
+		{name: "positive offset at DST boundary", at: time.Date(2030, time.March, 31, 3, 30, 0, 0, time.FixedZone("UTC+2", 2*60*60))},
+		{name: "negative offset", at: time.Date(2030, time.March, 30, 20, 30, 0, 0, time.FixedZone("UTC-5", -5*60*60))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !base.Equal(tc.at) {
+				t.Fatal("test timestamps must represent the same instant")
+			}
+			repo := &reminderRepoFake{}
+			service := NewReminderService(repo, &reminderDevicesFake{}, &senderFake{}, resolverFake{exists: true})
+			got, err := service.Create(context.Background(), user, CreateReminderInput{Title: tc.name, EntityType: reminder.EntityHive, EntityID: uuid.New(), RemindAt: tc.at})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.RemindAt.Equal(base) || got.RemindAt.Location() != time.UTC {
+				t.Fatalf("equivalent instant was not canonicalized: %v", got.RemindAt)
+			}
+		})
+	}
+}
+
+func TestCreateAndUpdateRejectPastInstantsRegardlessOfOffset(t *testing.T) {
+	user := uuid.New()
+	past := time.Now().UTC().Add(-time.Minute)
+	pastWithOffset := past.In(time.FixedZone("UTC-7", -7*60*60))
+	repo := &reminderRepoFake{}
+	service := NewReminderService(repo, &reminderDevicesFake{}, &senderFake{}, resolverFake{exists: true})
+	input := CreateReminderInput{Title: "past", EntityType: reminder.EntityHive, EntityID: uuid.New(), RemindAt: pastWithOffset}
+	if _, err := service.Create(context.Background(), user, input); err == nil {
+		t.Fatal("create accepted a past instant")
+	}
+
+	future, err := service.Create(context.Background(), user, CreateReminderInput{Title: "future", EntityType: reminder.EntityHive, EntityID: uuid.New(), RemindAt: time.Now().UTC().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.RemindAt = past
+	if _, err := service.Update(context.Background(), user, future.ID, input); err == nil {
+		t.Fatal("update accepted a past instant")
+	}
+}
+
+func TestReminderJSONUsesUTCForEveryExposedTimestamp(t *testing.T) {
+	zone := time.FixedZone("UTC+5:30", 5*60*60+30*60)
+	value := time.Date(2030, time.January, 2, 8, 30, 0, 0, zone)
+	reminderValue := reminder.Reminder{RemindAt: value, NextAttemptAt: value, CreatedAt: value, UpdatedAt: value}
+	body, err := json.Marshal(reminderValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"remindAt", "nextAttemptAt", "createdAt", "updatedAt"} {
+		var value string
+		if err := json.Unmarshal(got[field], &value); err != nil {
+			t.Fatal(err)
+		}
+		if value != "2030-01-02T03:00:00Z" {
+			t.Fatalf("%s = %q, want UTC timestamp", field, value)
+		}
 	}
 }
 
