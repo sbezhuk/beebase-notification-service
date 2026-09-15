@@ -11,12 +11,13 @@ import (
 )
 
 type Client struct {
-	urls map[reminder.EntityType]string
-	http *http.Client
+	urls  map[reminder.EntityType]string
+	token string
+	http  *http.Client
 }
 
-func New(urls map[reminder.EntityType]string) *Client {
-	return &Client{urls: urls, http: &http.Client{Timeout: 5 * time.Second}}
+func New(urls map[reminder.EntityType]string, token string) *Client {
+	return &Client{urls: urls, token: token, http: &http.Client{Timeout: 5 * time.Second}}
 }
 func (c *Client) Exists(ctx context.Context, t reminder.EntityType, id uuid.UUID) (bool, error) {
 	base := c.urls[t]
@@ -28,6 +29,7 @@ func (c *Client) Exists(ctx context.Context, t reminder.EntityType, id uuid.UUID
 	if err != nil {
 		return false, err
 	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return false, err

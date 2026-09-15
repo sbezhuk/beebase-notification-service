@@ -4,39 +4,55 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/reminder"
 )
 
-func TestClientExistsDistinguishesMissingAndUnavailable(t *testing.T) {
+func TestExistsAuthenticationAndStatusSemantics(t *testing.T) {
+	const token = "internal-test-token"
 	id := uuid.New()
-	client := New(map[reminder.EntityType]string{reminder.EntityApiary: "http://apiary"})
-	client.http = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/internal/api/v1/apiaries/"+id.String()+"/exists" {
-			t.Fatalf("path=%s", r.URL.Path)
-		}
-		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(nil), Header: make(http.Header)}, nil
-	})}
-	exists, err := client.Exists(context.Background(), reminder.EntityApiary, id)
-	if err != nil || !exists {
-		t.Fatalf("exists=%v err=%v", exists, err)
+	cases := []struct {
+		name       string
+		status     int
+		wantExists bool
+		wantErr    bool
+	}{
+		{name: "exists", status: http.StatusNoContent, wantExists: true},
+		{name: "not found", status: http.StatusNotFound},
+		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: true},
+		{name: "forbidden", status: http.StatusForbidden, wantErr: true},
+		{name: "server error", status: http.StatusBadGateway, wantErr: true},
 	}
-	client = New(map[reminder.EntityType]string{reminder.EntityHive: "http://hive"})
-	client.http = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(nil), Header: make(http.Header)}, nil
-	})}
-	exists, err = client.Exists(context.Background(), reminder.EntityHive, id)
-	if err != nil || exists {
-		t.Fatalf("missing=%v err=%v", exists, err)
-	}
-	client = New(map[reminder.EntityType]string{reminder.EntityHive: "http://127.0.0.1:1"})
-	if exists, err = client.Exists(context.Background(), reminder.EntityHive, id); err == nil || exists {
-		t.Fatalf("unavailable=%v err=%v", exists, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth string
+			client := New(map[reminder.EntityType]string{reminder.EntityApiary: "http://entity-service"}, token)
+			client.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				gotAuth = r.Header.Get("Authorization")
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header), Request: r}, nil
+			})
+			got, err := client.Exists(context.Background(), reminder.EntityApiary, id)
+			if got != tc.wantExists || (err != nil) != tc.wantErr {
+				t.Fatalf("Exists() = (%v, %v), want (%v, error=%v)", got, err, tc.wantExists, tc.wantErr)
+			}
+			if gotAuth != "Bearer "+token {
+				t.Fatalf("Authorization = %q, want internal bearer token", gotAuth)
+			}
+		})
 	}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestExistsNetworkFailureIsError(t *testing.T) {
+	client := New(map[reminder.EntityType]string{reminder.EntityApiary: "http://127.0.0.1:1"}, "token")
+	got, err := client.Exists(context.Background(), reminder.EntityApiary, uuid.New())
+	if got || err == nil {
+		t.Fatalf("Exists() = (%v, %v), want false and error", got, err)
+	}
+}

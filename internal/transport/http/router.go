@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sbezhuk/beebase-common/authmw"
 	"github.com/sbezhuk/beebase-common/httpx"
+	"github.com/sbezhuk/beebase-common/internalauth"
 	"github.com/sbezhuk/beebase-common/pagination"
 	appnotification "github.com/sbezhuk/beebase-notification-service/internal/application/notification"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
@@ -37,7 +38,11 @@ type registerRequest struct {
 	Platform    pushdevice.Platform `json:"platform"`
 }
 
-func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.AccessTokenParser) http.Handler {
+func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.AccessTokenParser, internalTokens ...string) http.Handler {
+	internalToken := ""
+	if len(internalTokens) > 0 {
+		internalToken = internalTokens[0]
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(requestLogger(log))
@@ -59,7 +64,7 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 		r.Put("/{reminderID}", h.UpdateReminder)
 		r.Delete("/{reminderID}", h.DeleteReminder)
 	})
-	r.With(authmw.RequireAuth(parser)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
+	r.With(internalauth.RequireAuth(internalToken)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
 	return r
 }
 

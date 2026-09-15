@@ -65,7 +65,7 @@ func run() error {
 	}
 	repo := repopostgres.NewPushDeviceRepository(db)
 	svc := appnotification.NewService(repo, sender)
-	resolver := entityclient.New(map[reminder.EntityType]string{reminder.EntityApiary: cfg.ApiaryServiceURL, reminder.EntityHive: cfg.HiveServiceURL, reminder.EntityInspection: cfg.InspectionServiceURL, reminder.EntityHarvest: cfg.HarvestServiceURL})
+	resolver := entityclient.New(map[reminder.EntityType]string{reminder.EntityApiary: cfg.ApiaryServiceURL, reminder.EntityHive: cfg.HiveServiceURL, reminder.EntityInspection: cfg.InspectionServiceURL, reminder.EntityHarvest: cfg.HarvestServiceURL}, cfg.InternalServiceToken)
 	reminderRepo := repopostgres.NewReminderRepository(db)
 	reminderSvc := appnotification.NewReminderService(reminderRepo, repo, sender, resolver)
 	go func() {
@@ -82,7 +82,7 @@ func run() error {
 			}
 		}
 	}()
-	router := transporthttp.NewRouter(log, db, transporthttp.NewHandler(svc, log, reminderSvc), verifier)
+	router := transporthttp.NewRouter(log, db, transporthttp.NewHandler(svc, log, reminderSvc), verifier, cfg.InternalServiceToken)
 	srv := server.New(server.Config{Addr: ":" + cfg.HTTPPort, Handler: router, ReadTimeout: cfg.HTTPReadTimeout, WriteTimeout: cfg.HTTPWriteTimeout, IdleTimeout: cfg.HTTPIdleTimeout})
 	errCh := make(chan error, 1)
 	go func() { log.Info("starting http server", "port", cfg.HTTPPort, "env", cfg.Env); errCh <- srv.Run() }()

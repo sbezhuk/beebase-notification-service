@@ -20,6 +20,7 @@ type Config struct {
 	FirebaseServiceAccountJSON                                                  []byte
 	AppleBundleID, AppleKeyID, AppleIssuerID, ApplePrivateKey, AppleEnvironment string
 	AuthJWKSURL                                                                 string
+	InternalServiceToken                                                        string
 	RedisAddr                                                                   string
 	RedisConnectTimeout                                                         time.Duration
 	ApiaryServiceURL, HiveServiceURL, InspectionServiceURL, HarvestServiceURL   string
@@ -43,7 +44,7 @@ func Load() (*Config, error) {
 		DatabaseURL: getEnv("DATABASE_URL", ""), DatabaseConnectTimeout: getDuration("DATABASE_CONNECT_TIMEOUT", 10*time.Second),
 		FirebaseProjectID: getEnv("FIREBASE_PROJECT_ID", ""),
 		AppleBundleID:     getEnv("APPLE_BUNDLE_ID", "com.beebase.production"), AppleKeyID: getEnv("APPLE_KEY_ID", ""), AppleIssuerID: getEnv("APPLE_ISSUER_ID", ""), ApplePrivateKey: getEnv("APPLE_PRIVATE_KEY", ""), AppleEnvironment: appleEnv,
-		AuthJWKSURL: getEnv("AUTH_JWKS_URL", ""), RedisAddr: getEnv("REDIS_ADDR", ""), RedisConnectTimeout: getDuration("REDIS_CONNECT_TIMEOUT", 5*time.Second),
+		AuthJWKSURL: getEnv("AUTH_JWKS_URL", ""), InternalServiceToken: getEnv("INTERNAL_SERVICE_TOKEN", ""), RedisAddr: getEnv("REDIS_ADDR", ""), RedisConnectTimeout: getDuration("REDIS_CONNECT_TIMEOUT", 5*time.Second),
 		ApiaryServiceURL: getEnv("APIARY_SERVICE_URL", "http://apiary-service:8080"), HiveServiceURL: getEnv("HIVE_SERVICE_URL", "http://hive-service:8080"), InspectionServiceURL: getEnv("INSPECTION_SERVICE_URL", "http://inspection-service:8080"), HarvestServiceURL: getEnv("HARVEST_SERVICE_URL", "http://harvest-service:8080"), ReminderWorkerInterval: getDuration("REMINDER_WORKER_INTERVAL", 30*time.Second),
 	}
 
@@ -76,6 +77,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.RedisAddr == "" {
 		return nil, fmt.Errorf("config: REDIS_ADDR is required")
+	}
+	if cfg.InternalServiceToken == "" {
+		return nil, fmt.Errorf("config: INTERNAL_SERVICE_TOKEN is required")
 	}
 	return cfg, nil
 }
