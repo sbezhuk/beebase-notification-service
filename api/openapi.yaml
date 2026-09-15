@@ -80,7 +80,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
-  /api/v1/devices/{deviceID}:
+  /api/v1/devices/{deviceId}:
     parameters:
       - $ref: "#/components/parameters/DeviceID"
     put:
@@ -157,8 +157,8 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ReminderRequest"}}}}
       responses:
         "201": {description: Created., content: {application/json: {schema: {$ref: "#/components/schemas/Reminder"}}}}
-  /api/v1/reminders/{reminderID}:
-    parameters: [{name: reminderID, in: path, required: true, schema: {type: string, format: uuid}}]
+  /api/v1/reminders/{reminderId}:
+    parameters: [{name: reminderId, in: path, required: true, schema: {type: string, format: uuid}}]
     get:
       tags: [reminders]
       summary: Get an owned reminder
@@ -175,7 +175,7 @@ paths:
 components:
   parameters:
     DeviceID:
-      name: deviceID
+      name: deviceId
       in: path
       required: true
       description: The device UUID returned by registration.

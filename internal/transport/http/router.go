@@ -73,16 +73,16 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 	r.Route("/api/v1/devices", func(r chi.Router) {
 		r.Use(authmw.RequireAuth(parser))
 		r.Post("/", h.Register)
-		r.Put("/{deviceID}", h.Update)
-		r.Delete("/{deviceID}", h.Remove)
+		r.Put("/{deviceId}", h.Update)
+		r.Delete("/{deviceId}", h.Remove)
 	})
 	r.Route("/api/v1/reminders", func(r chi.Router) {
 		r.Use(authmw.RequireAuth(parser))
 		r.Post("/", h.CreateReminder)
 		r.Get("/", h.ListReminders)
-		r.Get("/{reminderID}", h.GetReminder)
-		r.Put("/{reminderID}", h.UpdateReminder)
-		r.Delete("/{reminderID}", h.DeleteReminder)
+		r.Get("/{reminderId}", h.GetReminder)
+		r.Put("/{reminderId}", h.UpdateReminder)
+		r.Delete("/{reminderId}", h.DeleteReminder)
 	})
 	r.With(internalauth.RequireAuth(internalToken)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
 	return r
@@ -115,7 +115,7 @@ func (h *Handler) CreateReminder(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, 201, v)
 }
 func parseReminderID(r *http.Request) (uuid.UUID, error) {
-	return uuid.Parse(chi.URLParam(r, "reminderID"))
+	return uuid.Parse(chi.URLParam(r, "reminderId"))
 }
 func (h *Handler) GetReminder(w http.ResponseWriter, r *http.Request) {
 	uid, ok := authmw.UserIDFromContext(r.Context())
@@ -283,7 +283,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "missing_identity", "authenticated identity missing")
 		return
 	}
-	id, err := uuid.Parse(chi.URLParam(r, "deviceID"))
+	id, err := uuid.Parse(chi.URLParam(r, "deviceId"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_device_id", "invalid device id")
 		return
@@ -309,7 +309,7 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "missing_identity", "authenticated identity missing")
 		return
 	}
-	id, err := uuid.Parse(chi.URLParam(r, "deviceID"))
+	id, err := uuid.Parse(chi.URLParam(r, "deviceId"))
 	if err != nil {
 		httpx.WriteError(w, 400, "invalid_device_id", "invalid device id")
 		return
