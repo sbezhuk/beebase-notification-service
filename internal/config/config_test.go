@@ -9,7 +9,7 @@ import (
 
 func TestLoadDecodesFirebaseCredentialWithoutExposingIt(t *testing.T) {
 	credential := `{"type":"service_account","project_id":"beebase-production","private_key":"PRIVATE"}`
-	keys := []string{"DATABASE_URL", "FIREBASE_PROJECT_ID", "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64", "AUTH_JWKS_URL", "REDIS_ADDR"}
+	keys := []string{"DATABASE_URL", "FIREBASE_PROJECT_ID", "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64", "AUTH_JWKS_URL", "REDIS_ADDR", "INTERNAL_SERVICE_TOKEN"}
 	for _, key := range keys {
 		t.Setenv(key, "")
 	}
@@ -18,6 +18,7 @@ func TestLoadDecodesFirebaseCredentialWithoutExposingIt(t *testing.T) {
 	t.Setenv("FIREBASE_SERVICE_ACCOUNT_JSON_BASE64", base64.StdEncoding.EncodeToString([]byte(credential)))
 	t.Setenv("AUTH_JWKS_URL", "http://auth")
 	t.Setenv("REDIS_ADDR", "redis:6379")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-token")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -36,6 +37,7 @@ func TestLoadRejectsProjectMismatch(t *testing.T) {
 	t.Setenv("FIREBASE_SERVICE_ACCOUNT_JSON_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"project_id":"other"}`)))
 	t.Setenv("AUTH_JWKS_URL", "http://auth")
 	t.Setenv("REDIS_ADDR", "redis:6379")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-token")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("Load() error = %v, want project mismatch", err)
 	}

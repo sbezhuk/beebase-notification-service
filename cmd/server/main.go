@@ -10,6 +10,8 @@ import (
 	"github.com/sbezhuk/beebase-common/sessionstore"
 	appnotification "github.com/sbezhuk/beebase-notification-service/internal/application/notification"
 	"github.com/sbezhuk/beebase-notification-service/internal/config"
+	"github.com/sbezhuk/beebase-notification-service/internal/domain/reminder"
+	"github.com/sbezhuk/beebase-notification-service/internal/platform/entityclient"
 	"github.com/sbezhuk/beebase-notification-service/internal/platform/firebase"
 	"github.com/sbezhuk/beebase-notification-service/internal/platform/postgres"
 	repopostgres "github.com/sbezhuk/beebase-notification-service/internal/repository/postgres"
@@ -18,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -62,7 +65,24 @@ func run() error {
 	}
 	repo := repopostgres.NewPushDeviceRepository(db)
 	svc := appnotification.NewService(repo, sender)
-	router := transporthttp.NewRouter(log, db, transporthttp.NewHandler(svc, log), verifier)
+	resolver := entityclient.New(map[reminder.EntityType]string{reminder.EntityApiary: cfg.ApiaryServiceURL, reminder.EntityHive: cfg.HiveServiceURL, reminder.EntityInspection: cfg.InspectionServiceURL, reminder.EntityHarvest: cfg.HarvestServiceURL}, cfg.InternalServiceToken)
+	reminderRepo := repopostgres.NewReminderRepository(db)
+	reminderSvc := appnotification.NewReminderService(reminderRepo, repo, sender, resolver)
+	go func() {
+		ticker := time.NewTicker(cfg.ReminderWorkerInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := reminderSvc.ProcessDue(ctx, time.Now().UTC(), 50); err != nil {
+					log.Error("reminder worker failed", "error", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	router := transporthttp.NewRouter(log, db, transporthttp.NewHandler(svc, log, reminderSvc), verifier, cfg.InternalServiceToken)
 	srv := server.New(server.Config{Addr: ":" + cfg.HTTPPort, Handler: router, ReadTimeout: cfg.HTTPReadTimeout, WriteTimeout: cfg.HTTPWriteTimeout, IdleTimeout: cfg.HTTPIdleTimeout})
 	errCh := make(chan error, 1)
 	go func() { log.Info("starting http server", "port", cfg.HTTPPort, "env", cfg.Env); errCh <- srv.Run() }()
