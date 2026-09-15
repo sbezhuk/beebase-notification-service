@@ -1,8 +1,11 @@
 package notification
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -135,8 +138,9 @@ func (f *reminderRepoFake) MarkRetry(_ context.Context, id, token uuid.UUID, sta
 
 type reminderDevicesFake struct {
 	fakeRepo
-	devices []pushdevice.PushDevice
-	removed []string
+	devices   []pushdevice.PushDevice
+	removed   []string
+	deleteErr error
 }
 
 func (f *reminderDevicesFake) ListByUser(context.Context, uuid.UUID) ([]pushdevice.PushDevice, error) {
@@ -144,7 +148,7 @@ func (f *reminderDevicesFake) ListByUser(context.Context, uuid.UUID) ([]pushdevi
 }
 func (f *reminderDevicesFake) DeleteByDestination(_ context.Context, d string) error {
 	f.removed = append(f.removed, d)
-	return nil
+	return f.deleteErr
 }
 
 type resolverFake struct {
@@ -275,6 +279,68 @@ func TestProcessDueMultipleDevicesStaleDeviceDoesNotFailDelivery(t *testing.T) {
 	_ = svc.ProcessDue(context.Background(), time.Now(), 10)
 	if repo.marked != "sent" || len(devices.removed) != 1 || len(sender.calls) != 2 {
 		t.Fatalf("multi-device semantics failed: marked=%s removed=%v calls=%d", repo.marked, devices.removed, len(sender.calls))
+	}
+}
+
+func TestProcessDueContinuesWhenStaleDeviceCleanupFails(t *testing.T) {
+	repo := &reminderRepoFake{}
+	v := newReminder(uuid.New())
+	repo.claim = []reminder.Reminder{v}
+	devices := &reminderDevicesFake{
+		devices:   []pushdevice.PushDevice{{ID: uuid.New(), UserID: v.UserID, Destination: "stale"}, {ID: uuid.New(), UserID: v.UserID, Destination: "good"}},
+		deleteErr: errors.New("database unavailable"),
+	}
+	old := slog.Default()
+	defer slog.SetDefault(old)
+	var logs bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	svc := NewReminderService(repo, devices, &senderFake{errs: []error{
+		&DeliveryError{Kind: DeliveryUnregistered, Err: errors.New("stale")}, nil,
+	}}, resolverFake{exists: true})
+
+	if err := svc.ProcessDue(context.Background(), time.Now(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if repo.marked != "sent" || len(devices.removed) != 1 {
+		t.Fatalf("cleanup failure changed delivery semantics: marked=%s removed=%v", repo.marked, devices.removed)
+	}
+	if !strings.Contains(logs.String(), "failed to delete stale push device") || !strings.Contains(logs.String(), "unregistered_destination") {
+		t.Fatalf("cleanup failure was not logged safely: %q", logs.String())
+	}
+	if strings.Contains(logs.String(), "destination=") || strings.Contains(logs.String(), "fid-") {
+		t.Fatalf("log contains a destination: %q", logs.String())
+	}
+}
+
+func TestProcessDueAttemptsDevicesAfterFirstSuccess(t *testing.T) {
+	repo := &reminderRepoFake{}
+	v := newReminder(uuid.New())
+	repo.claim = []reminder.Reminder{v}
+	devices := &reminderDevicesFake{devices: []pushdevice.PushDevice{{UserID: v.UserID, Destination: "good"}, {UserID: v.UserID, Destination: "stale"}}}
+	sender := &senderFake{errs: []error{nil, &DeliveryError{Kind: DeliveryUnregistered, Err: errors.New("stale")}}}
+	svc := NewReminderService(repo, devices, sender, resolverFake{exists: true})
+	_ = svc.ProcessDue(context.Background(), time.Now(), 10)
+	if repo.marked != "sent" || len(sender.calls) != 2 || len(devices.removed) != 1 {
+		t.Fatalf("first success short-circuited delivery: marked=%s calls=%d removed=%v", repo.marked, len(sender.calls), devices.removed)
+	}
+}
+
+func TestProcessDueAllUnregisteredDevicesRetainsPermanentFailure(t *testing.T) {
+	repo := &reminderRepoFake{}
+	v := newReminder(uuid.New())
+	repo.claim = []reminder.Reminder{v}
+	devices := &reminderDevicesFake{devices: []pushdevice.PushDevice{
+		{UserID: v.UserID, Destination: "stale-1"},
+		{UserID: v.UserID, Destination: "stale-2"},
+	}}
+	sender := &senderFake{errs: []error{
+		&DeliveryError{Kind: DeliveryUnregistered, Err: errors.New("stale")},
+		&DeliveryError{Kind: DeliveryUnregistered, Err: errors.New("stale")},
+	}}
+	svc := NewReminderService(repo, devices, sender, resolverFake{exists: true})
+	_ = svc.ProcessDue(context.Background(), time.Now(), 10)
+	if repo.marked != "failed" || len(sender.calls) != 2 || len(devices.removed) != 2 {
+		t.Fatalf("all stale devices were not processed correctly: marked=%s calls=%d removed=%v", repo.marked, len(sender.calls), devices.removed)
 	}
 }
 func TestProcessDueConcurrentWorkersClaimOnce(t *testing.T) {

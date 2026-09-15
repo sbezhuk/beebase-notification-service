@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -69,7 +70,20 @@ func (s *Service) Send(ctx context.Context, m PushMessage) error {
 	if errors.As(err, &deliveryErr) && (deliveryErr.Kind == DeliveryInvalidDestination || deliveryErr.Kind == DeliveryUnregistered) {
 		// A definitive provider response means this destination cannot be used
 		// again. Cleanup is deliberately not attempted for transient failures.
-		_ = s.devices.DeleteByDestination(ctx, m.Destination)
+		deleteStaleDevice(ctx, s.devices, m.Destination, deliveryErr.Kind)
 	}
 	return err
+}
+
+func deleteStaleDevice(ctx context.Context, devices pushdevice.Repository, destination string, kind DeliveryErrorKind, attrs ...any) {
+	// The destination is intentionally not passed to the logger. Callers must
+	// provide it only to the repository so FIDs never enter structured logs.
+	if err := devices.DeleteByDestination(ctx, destination); err != nil {
+		// Keep the failure observable without emitting arbitrary repository error
+		// text, which could contain a destination in an implementation-specific
+		// error message.
+		logAttrs := []any{"delivery_kind", kind, "cleanup_error_type", fmt.Sprintf("%T", err)}
+		logAttrs = append(logAttrs, attrs...)
+		slog.Default().Error("failed to delete stale push device", logAttrs...)
+	}
 }

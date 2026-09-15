@@ -12,6 +12,7 @@ type fakeRepo struct {
 	device             *pushdevice.PushDevice
 	deleted            uuid.UUID
 	deletedDestination string
+	deleteErr          error
 	upsertErr          error
 	updateErr          error
 }
@@ -38,7 +39,7 @@ func (f *fakeRepo) FindByID(context.Context, uuid.UUID, uuid.UUID) (*pushdevice.
 }
 func (f *fakeRepo) DeleteByDestination(_ context.Context, destination string) error {
 	f.deletedDestination = destination
-	return nil
+	return f.deleteErr
 }
 func (f *fakeRepo) Delete(_ context.Context, id, user uuid.UUID) error {
 	f.deleted = id
@@ -109,6 +110,33 @@ func TestSendDoesNotRemoveOnTemporaryFailure(t *testing.T) {
 	_ = svc.Send(context.Background(), PushMessage{Destination: "fid-live", Title: "title", Body: "body"})
 	if repo.deletedDestination != "" {
 		t.Fatalf("temporary failure deleted %q", repo.deletedDestination)
+	}
+}
+
+func TestSendDoesNotRemoveOnGenericInvalidArgument(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo, failingSender{err: &DeliveryError{Kind: DeliveryUnknown, Err: errors.New("invalid request")}})
+	_ = svc.Send(context.Background(), PushMessage{Destination: "fid-live", Title: "title", Body: "body"})
+	if repo.deletedDestination != "" {
+		t.Fatalf("generic invalid argument deleted %q", repo.deletedDestination)
+	}
+}
+
+func TestSendDoesNotRemoveOnAuthenticationFailure(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo, failingSender{err: &DeliveryError{Kind: DeliveryAuthentication, Err: errors.New("sender mismatch")}})
+	_ = svc.Send(context.Background(), PushMessage{Destination: "fid-live", Title: "title", Body: "body"})
+	if repo.deletedDestination != "" {
+		t.Fatalf("authentication failure deleted %q", repo.deletedDestination)
+	}
+}
+
+func TestSendKeepsDeliveryErrorWhenStaleCleanupFails(t *testing.T) {
+	repo := &fakeRepo{deleteErr: errors.New("database unavailable")}
+	providerErr := &DeliveryError{Kind: DeliveryUnregistered, Err: errors.New("provider rejected destination")}
+	svc := NewService(repo, failingSender{err: providerErr})
+	if err := svc.Send(context.Background(), PushMessage{Destination: "fid-stale", Title: "title", Body: "body"}); !errors.Is(err, providerErr) {
+		t.Fatalf("got %v, want original delivery error", err)
 	}
 }
 

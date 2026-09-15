@@ -143,7 +143,8 @@ func (s *ReminderService) processOne(ctx context.Context, v reminder.Reminder, n
 		var de *DeliveryError
 		if errors.As(err, &de) {
 			if de.Kind == DeliveryInvalidDestination || de.Kind == DeliveryUnregistered {
-				_ = s.devices.DeleteByDestination(ctx, d.Destination)
+				deleteStaleDevice(ctx, s.devices, d.Destination, de.Kind,
+					"device_id", d.ID, "reminder_id", v.ID, "user_id", v.UserID)
 			}
 			if de.Kind != DeliveryTemporary {
 				permanent = err
