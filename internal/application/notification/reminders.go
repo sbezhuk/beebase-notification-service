@@ -26,6 +26,8 @@ type ReminderService struct {
 	maxAttempts int
 }
 
+const processingLease = 5 * time.Minute
+
 func NewReminderService(r reminder.Repository, d pushdevice.Repository, s PushSender, e EntityResolver) *ReminderService {
 	return &ReminderService{reminders: r, devices: d, sender: s, resolver: e, maxAttempts: 5}
 }
@@ -97,7 +99,7 @@ func (s *ReminderService) Cleanup(ctx context.Context, es []reminder.EntityRef) 
 }
 
 func (s *ReminderService) ProcessDue(ctx context.Context, now time.Time, batch int) error {
-	items, err := s.reminders.ClaimDue(ctx, now.UTC(), batch)
+	items, err := s.reminders.ClaimDue(ctx, now.UTC(), batch, processingLease)
 	if err != nil {
 		return err
 	}
@@ -114,7 +116,7 @@ func (s *ReminderService) processOne(ctx context.Context, v reminder.Reminder, n
 		return s.retry(ctx, v, err, now)
 	}
 	if !exists {
-		return s.reminders.MarkCancelled(ctx, v.ID, "entity_deleted")
+		return s.reminders.MarkCancelled(ctx, v.ID, v.ProcessingToken, "entity_deleted")
 	}
 	lister, ok := s.devices.(deviceLister)
 	if !ok {
@@ -126,6 +128,7 @@ func (s *ReminderService) processOne(ctx context.Context, v reminder.Reminder, n
 	}
 	success := 0
 	var last error
+	var permanent error
 	body := v.Note
 	if strings.TrimSpace(body) == "" {
 		body = v.Title
@@ -138,29 +141,41 @@ func (s *ReminderService) processOne(ctx context.Context, v reminder.Reminder, n
 		}
 		last = err
 		var de *DeliveryError
-		if errors.As(err, &de) && (de.Kind == DeliveryInvalidDestination || de.Kind == DeliveryUnregistered) {
-			_ = s.devices.DeleteByDestination(ctx, d.Destination)
+		if errors.As(err, &de) {
+			if de.Kind == DeliveryInvalidDestination || de.Kind == DeliveryUnregistered {
+				_ = s.devices.DeleteByDestination(ctx, d.Destination)
+			}
+			if de.Kind != DeliveryTemporary {
+				permanent = err
+			}
 		}
 	}
 	if success > 0 {
-		return s.reminders.MarkSent(ctx, v.ID)
+		return s.reminders.MarkSent(ctx, v.ID, v.ProcessingToken)
 	}
 	if last == nil {
 		last = fmt.Errorf("user has no registered push devices")
+	}
+	if permanent != nil {
+		return s.reminders.MarkRetry(ctx, v.ID, v.ProcessingToken, reminder.StatusFailed, v.AttemptCount+1, now.Add(24*time.Hour), safeError(permanent))
 	}
 	return s.retry(ctx, v, last, now)
 }
 func (s *ReminderService) retry(ctx context.Context, v reminder.Reminder, err error, now time.Time) error {
 	attempt := v.AttemptCount + 1
-	safe := err.Error()
-	if len(safe) > 500 {
-		safe = safe[:500]
-	}
+	safe := safeError(err)
 	if attempt >= s.maxAttempts {
-		return s.reminders.MarkRetry(ctx, v.ID, reminder.StatusFailed, attempt, now.Add(24*time.Hour), safe)
+		return s.reminders.MarkRetry(ctx, v.ID, v.ProcessingToken, reminder.StatusFailed, attempt, now.Add(24*time.Hour), safe)
 	}
 	backoff := time.Duration(1<<min(attempt, 6)) * time.Minute
-	return s.reminders.MarkRetry(ctx, v.ID, reminder.StatusScheduled, attempt, now.Add(backoff), safe)
+	return s.reminders.MarkRetry(ctx, v.ID, v.ProcessingToken, reminder.StatusScheduled, attempt, now.Add(backoff), safe)
+}
+func safeError(err error) string {
+	s := err.Error()
+	if len(s) > 500 {
+		return s[:500]
+	}
+	return s
 }
 func min(a, b int) int {
 	if a < b {

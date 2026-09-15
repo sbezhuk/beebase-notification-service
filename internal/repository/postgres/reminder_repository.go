@@ -18,18 +18,18 @@ type ReminderRepository struct{ db *pgxpool.Pool }
 
 func NewReminderRepository(db *pgxpool.Pool) *ReminderRepository { return &ReminderRepository{db: db} }
 
-const reminderColumns = `id,user_id,title,note,entity_type,entity_id,reminder_type,source,remind_at,status,cancel_reason,attempt_count,next_attempt_at,last_error,created_at,updated_at`
+const reminderColumns = `id,user_id,title,note,entity_type,entity_id,reminder_type,source,remind_at,status,cancel_reason,attempt_count,next_attempt_at,last_error,processing_token,processing_lease_until,created_at,updated_at`
 
 func scanReminder(s pgx.Row, r *reminder.Reminder) error {
-	return s.Scan(&r.ID, &r.UserID, &r.Title, &r.Note, &r.EntityType, &r.EntityID, &r.ReminderType, &r.Source, &r.RemindAt, &r.Status, &r.CancelReason, &r.AttemptCount, &r.NextAttemptAt, &r.LastError, &r.CreatedAt, &r.UpdatedAt)
+	return s.Scan(&r.ID, &r.UserID, &r.Title, &r.Note, &r.EntityType, &r.EntityID, &r.ReminderType, &r.Source, &r.RemindAt, &r.Status, &r.CancelReason, &r.AttemptCount, &r.NextAttemptAt, &r.LastError, &r.ProcessingToken, &r.ProcessingLeaseUntil, &r.CreatedAt, &r.UpdatedAt)
 }
 func scanReminderRows(rows pgx.Rows) (reminder.Reminder, error) {
 	var r reminder.Reminder
-	err := rows.Scan(&r.ID, &r.UserID, &r.Title, &r.Note, &r.EntityType, &r.EntityID, &r.ReminderType, &r.Source, &r.RemindAt, &r.Status, &r.CancelReason, &r.AttemptCount, &r.NextAttemptAt, &r.LastError, &r.CreatedAt, &r.UpdatedAt)
+	err := rows.Scan(&r.ID, &r.UserID, &r.Title, &r.Note, &r.EntityType, &r.EntityID, &r.ReminderType, &r.Source, &r.RemindAt, &r.Status, &r.CancelReason, &r.AttemptCount, &r.NextAttemptAt, &r.LastError, &r.ProcessingToken, &r.ProcessingLeaseUntil, &r.CreatedAt, &r.UpdatedAt)
 	return r, err
 }
 func (r *ReminderRepository) Create(ctx context.Context, v *reminder.Reminder) error {
-	_, err := r.db.Exec(ctx, `INSERT INTO reminders (`+reminderColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, v.ID, v.UserID, v.Title, v.Note, v.EntityType, v.EntityID, v.ReminderType, v.Source, v.RemindAt, v.Status, v.CancelReason, v.AttemptCount, v.NextAttemptAt, v.LastError, v.CreatedAt, v.UpdatedAt)
+	_, err := r.db.Exec(ctx, `INSERT INTO reminders (id,user_id,title,note,entity_type,entity_id,reminder_type,source,remind_at,status,cancel_reason,attempt_count,next_attempt_at,last_error,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, v.ID, v.UserID, v.Title, v.Note, v.EntityType, v.EntityID, v.ReminderType, v.Source, v.RemindAt, v.Status, v.CancelReason, v.AttemptCount, v.NextAttemptAt, v.LastError, v.CreatedAt, v.UpdatedAt)
 	return err
 }
 func (r *ReminderRepository) Get(ctx context.Context, id, user uuid.UUID) (*reminder.Reminder, error) {
@@ -83,7 +83,7 @@ func (r *ReminderRepository) List(ctx context.Context, user uuid.UUID, f reminde
 	return out, count, rows.Err()
 }
 func (r *ReminderRepository) Update(ctx context.Context, v *reminder.Reminder) error {
-	tag, err := r.db.Exec(ctx, `UPDATE reminders SET title=$3,note=$4,entity_type=$5,entity_id=$6,remind_at=$7,status=$8,updated_at=$9,next_attempt_at=$10 WHERE id=$1 AND user_id=$2`, v.ID, v.UserID, v.Title, v.Note, v.EntityType, v.EntityID, v.RemindAt, v.Status, v.UpdatedAt, v.NextAttemptAt)
+	tag, err := r.db.Exec(ctx, `UPDATE reminders SET title=$3,note=$4,entity_type=$5,entity_id=$6,remind_at=$7,status=$8,updated_at=$9,next_attempt_at=$10,processing_token=NULL,processing_lease_until=NULL WHERE id=$1 AND user_id=$2`, v.ID, v.UserID, v.Title, v.Note, v.EntityType, v.EntityID, v.RemindAt, v.Status, v.UpdatedAt, v.NextAttemptAt)
 	if err == nil && tag.RowsAffected() == 0 {
 		err = reminder.ErrNotFound
 	}
@@ -98,19 +98,19 @@ func (r *ReminderRepository) Delete(ctx context.Context, id, user uuid.UUID) err
 }
 func (r *ReminderRepository) Cleanup(ctx context.Context, es []reminder.EntityRef) error {
 	for _, e := range es {
-		if _, err := r.db.Exec(ctx, `UPDATE reminders SET status='cancelled',cancel_reason='entity_deleted',updated_at=$3 WHERE entity_type=$1 AND entity_id=$2 AND status NOT IN ('sent','cancelled')`, e.Type, e.ID, time.Now().UTC()); err != nil {
+		if _, err := r.db.Exec(ctx, `UPDATE reminders SET status='cancelled',cancel_reason='entity_deleted',processing_token=NULL,processing_lease_until=NULL,updated_at=$3 WHERE entity_type=$1 AND entity_id=$2 AND status NOT IN ('sent','cancelled')`, e.Type, e.ID, time.Now().UTC()); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func (r *ReminderRepository) ClaimDue(ctx context.Context, now time.Time, limit int) ([]reminder.Reminder, error) {
+func (r *ReminderRepository) ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]reminder.Reminder, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT `+reminderColumns+` FROM reminders WHERE status='scheduled' AND next_attempt_at <= $1 AND remind_at <= $1 ORDER BY remind_at FOR UPDATE SKIP LOCKED LIMIT $2`, now, limit)
+	rows, err := tx.Query(ctx, `SELECT `+reminderColumns+` FROM reminders WHERE (status='scheduled' AND next_attempt_at <= $1 AND remind_at <= $1) OR (status='processing' AND processing_lease_until <= $1) ORDER BY remind_at LIMIT $2 FOR UPDATE SKIP LOCKED`, now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -124,26 +124,29 @@ func (r *ReminderRepository) ClaimDue(ctx context.Context, now time.Time, limit 
 		out = append(out, v)
 	}
 	rows.Close()
-	for _, v := range out {
-		if _, err = tx.Exec(ctx, `UPDATE reminders SET status='processing',updated_at=$2 WHERE id=$1`, v.ID, now); err != nil {
+	for i := range out {
+		out[i].ProcessingToken = uuid.New()
+		leaseUntil := now.Add(lease)
+		out[i].ProcessingLeaseUntil = &leaseUntil
+		if _, err = tx.Exec(ctx, `UPDATE reminders SET status='processing',processing_token=$2,processing_lease_until=$3,updated_at=$4 WHERE id=$1`, out[i].ID, out[i].ProcessingToken, leaseUntil, now); err != nil {
 			return nil, err
 		}
-		v.Status = reminder.StatusProcessing
+		out[i].Status = reminder.StatusProcessing
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
-func (r *ReminderRepository) MarkSent(ctx context.Context, id uuid.UUID) error {
-	_, e := r.db.Exec(ctx, `UPDATE reminders SET status='sent',updated_at=$2 WHERE id=$1`, id, time.Now().UTC())
+func (r *ReminderRepository) MarkSent(ctx context.Context, id, token uuid.UUID) error {
+	_, e := r.db.Exec(ctx, `UPDATE reminders SET status='sent',processing_token=NULL,processing_lease_until=NULL,updated_at=$3 WHERE id=$1 AND status='processing' AND processing_token=$2`, id, token, time.Now().UTC())
 	return e
 }
-func (r *ReminderRepository) MarkCancelled(ctx context.Context, id uuid.UUID, reason string) error {
-	_, e := r.db.Exec(ctx, `UPDATE reminders SET status='cancelled',cancel_reason=$2,updated_at=$3 WHERE id=$1`, id, reason, time.Now().UTC())
+func (r *ReminderRepository) MarkCancelled(ctx context.Context, id, token uuid.UUID, reason string) error {
+	_, e := r.db.Exec(ctx, `UPDATE reminders SET status='cancelled',cancel_reason=$3,processing_token=NULL,processing_lease_until=NULL,updated_at=$4 WHERE id=$1 AND status='processing' AND processing_token=$2`, id, token, reason, time.Now().UTC())
 	return e
 }
-func (r *ReminderRepository) MarkRetry(ctx context.Context, id uuid.UUID, status reminder.Status, attempt int, next time.Time, last string) error {
-	_, e := r.db.Exec(ctx, `UPDATE reminders SET status=$2,attempt_count=$3,next_attempt_at=$4,last_error=$5,updated_at=$6 WHERE id=$1`, id, status, attempt, next, last, time.Now().UTC())
+func (r *ReminderRepository) MarkRetry(ctx context.Context, id, token uuid.UUID, status reminder.Status, attempt int, next time.Time, last string) error {
+	_, e := r.db.Exec(ctx, `UPDATE reminders SET status=$3,attempt_count=$4,next_attempt_at=$5,last_error=$6,processing_token=NULL,processing_lease_until=NULL,updated_at=$7 WHERE id=$1 AND status='processing' AND processing_token=$2`, id, token, status, attempt, next, last, time.Now().UTC())
 	return e
 }

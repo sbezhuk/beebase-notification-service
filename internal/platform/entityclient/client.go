@@ -23,7 +23,8 @@ func (c *Client) Exists(ctx context.Context, t reminder.EntityType, id uuid.UUID
 	if base == "" {
 		return false, fmt.Errorf("entity service unavailable")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/internal/api/v1/%ss/%s/exists", base, t, id), nil)
+	plural := map[reminder.EntityType]string{reminder.EntityApiary: "apiaries", reminder.EntityHive: "hives", reminder.EntityInspection: "inspections", reminder.EntityHarvest: "harvests"}[t]
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/internal/api/v1/%s/%s/exists", base, plural, id), nil)
 	if err != nil {
 		return false, err
 	}

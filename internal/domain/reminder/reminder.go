@@ -32,22 +32,24 @@ const (
 )
 
 type Reminder struct {
-	ID            uuid.UUID  `json:"id"`
-	UserID        uuid.UUID  `json:"user_id"`
-	Title         string     `json:"title"`
-	Note          string     `json:"note"`
-	EntityType    EntityType `json:"entity_type"`
-	EntityID      uuid.UUID  `json:"entity_id"`
-	ReminderType  string     `json:"reminder_type"`
-	Source        string     `json:"source"`
-	RemindAt      time.Time  `json:"remind_at"`
-	Status        Status     `json:"status"`
-	CancelReason  *string    `json:"cancel_reason,omitempty"`
-	AttemptCount  int        `json:"attempt_count"`
-	NextAttemptAt time.Time  `json:"next_attempt_at"`
-	LastError     *string    `json:"last_error,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                   uuid.UUID  `json:"id"`
+	UserID               uuid.UUID  `json:"user_id"`
+	Title                string     `json:"title"`
+	Note                 string     `json:"note"`
+	EntityType           EntityType `json:"entity_type"`
+	EntityID             uuid.UUID  `json:"entity_id"`
+	ReminderType         string     `json:"reminder_type"`
+	Source               string     `json:"source"`
+	RemindAt             time.Time  `json:"remind_at"`
+	Status               Status     `json:"status"`
+	CancelReason         *string    `json:"cancel_reason,omitempty"`
+	AttemptCount         int        `json:"attempt_count"`
+	NextAttemptAt        time.Time  `json:"next_attempt_at"`
+	LastError            *string    `json:"last_error,omitempty"`
+	ProcessingToken      uuid.UUID  `json:"-"`
+	ProcessingLeaseUntil *time.Time `json:"-"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 var ErrNotFound = errors.New("reminder not found")
@@ -66,10 +68,10 @@ type Repository interface {
 	Update(context.Context, *Reminder) error
 	Delete(context.Context, uuid.UUID, uuid.UUID) error
 	Cleanup(context.Context, []EntityRef) error
-	ClaimDue(context.Context, time.Time, int) ([]Reminder, error)
-	MarkSent(context.Context, uuid.UUID) error
-	MarkCancelled(context.Context, uuid.UUID, string) error
-	MarkRetry(context.Context, uuid.UUID, Status, int, time.Time, string) error
+	ClaimDue(context.Context, time.Time, int, time.Duration) ([]Reminder, error)
+	MarkSent(context.Context, uuid.UUID, uuid.UUID) error
+	MarkCancelled(context.Context, uuid.UUID, uuid.UUID, string) error
+	MarkRetry(context.Context, uuid.UUID, uuid.UUID, Status, int, time.Time, string) error
 }
 
 type EntityRef struct {

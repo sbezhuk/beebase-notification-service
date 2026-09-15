@@ -59,7 +59,7 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 		r.Put("/{reminderID}", h.UpdateReminder)
 		r.Delete("/{reminderID}", h.DeleteReminder)
 	})
-	r.Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
+	r.With(authmw.RequireAuth(parser)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
 	return r
 }
 
@@ -145,6 +145,10 @@ func (h *Handler) ListReminders(w http.ResponseWriter, r *http.Request) {
 	}
 	if x := q.Get("status"); x != "" {
 		v := reminder.Status(x)
+		if v != reminder.StatusScheduled && v != reminder.StatusProcessing && v != reminder.StatusSent && v != reminder.StatusCancelled && v != reminder.StatusFailed {
+			httpx.WriteError(w, 400, "invalid_status", "invalid reminder status")
+			return
+		}
 		f.Status = &v
 	}
 	items, total, e := h.reminders.List(r.Context(), uid, f)
