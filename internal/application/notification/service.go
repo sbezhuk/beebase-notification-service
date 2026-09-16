@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/sbezhuk/beebase-common/authmw"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
 	"log/slog"
 	"strings"
@@ -12,31 +13,78 @@ import (
 )
 
 type Service struct {
-	devices pushdevice.Repository
-	sender  PushSender
+	devices  pushdevice.Repository
+	sender   PushSender
+	sessions authmw.SessionChecker
 }
 
-func NewService(devices pushdevice.Repository, sender PushSender) *Service {
-	return &Service{devices: devices, sender: sender}
+func NewService(devices pushdevice.Repository, sender PushSender, sessions ...authmw.SessionChecker) *Service {
+	var checker authmw.SessionChecker
+	if len(sessions) > 0 {
+		checker = sessions[0]
+	}
+	return &Service{devices: devices, sender: sender, sessions: checker}
 }
 
-func (s *Service) RegisterDevice(ctx context.Context, userID uuid.UUID, destination string, platform pushdevice.Platform) (*pushdevice.PushDevice, error) {
+func (s *Service) RegisterDevice(ctx context.Context, userID uuid.UUID, destination string, platform pushdevice.Platform, sessionIDs ...uuid.UUID) (*pushdevice.PushDevice, error) {
+	var sessionID uuid.UUID
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
+	return s.registerDevice(ctx, userID, destination, platform, sessionID, 0)
+}
+
+func (s *Service) RegisterDeviceForSession(ctx context.Context, userID uuid.UUID, destination string, platform pushdevice.Platform, sessionID uuid.UUID, generation int64) (*pushdevice.PushDevice, error) {
+	return s.registerDevice(ctx, userID, destination, platform, sessionID, generation)
+}
+
+func (s *Service) registerDevice(ctx context.Context, userID uuid.UUID, destination string, platform pushdevice.Platform, sessionID uuid.UUID, generation int64) (*pushdevice.PushDevice, error) {
 	if err := validateDevice(destination, platform); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	d := &pushdevice.PushDevice{ID: uuid.New(), UserID: userID, Destination: destination, Platform: platform, CreatedAt: now, UpdatedAt: now}
+	if s.sessions != nil && sessionID != uuid.Nil {
+		active, err := s.sessions.IsActive(ctx, userID, sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("register device: check session: %w", err)
+		}
+		if !active {
+			return nil, pushdevice.ErrInactiveSession
+		}
+	}
+	d := &pushdevice.PushDevice{ID: uuid.New(), UserID: userID, SessionID: sessionID, SessionGeneration: generation, Destination: destination, Platform: platform, CreatedAt: now, UpdatedAt: now}
 	if err := s.devices.Upsert(ctx, d); err != nil {
 		return nil, fmt.Errorf("register device: %w", err)
 	}
 	return d, nil
 }
 
-func (s *Service) UpdateDevice(ctx context.Context, userID, id uuid.UUID, destination string, platform pushdevice.Platform) (*pushdevice.PushDevice, error) {
+func (s *Service) UpdateDevice(ctx context.Context, userID, id uuid.UUID, destination string, platform pushdevice.Platform, sessionIDs ...uuid.UUID) (*pushdevice.PushDevice, error) {
+	var sessionID uuid.UUID
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
+	return s.updateDevice(ctx, userID, id, destination, platform, sessionID, 0)
+}
+
+func (s *Service) UpdateDeviceForSession(ctx context.Context, userID, id uuid.UUID, destination string, platform pushdevice.Platform, sessionID uuid.UUID, generation int64) (*pushdevice.PushDevice, error) {
+	return s.updateDevice(ctx, userID, id, destination, platform, sessionID, generation)
+}
+
+func (s *Service) updateDevice(ctx context.Context, userID, id uuid.UUID, destination string, platform pushdevice.Platform, sessionID uuid.UUID, generation int64) (*pushdevice.PushDevice, error) {
 	if err := validateDevice(destination, platform); err != nil {
 		return nil, err
 	}
-	d := &pushdevice.PushDevice{ID: id, UserID: userID, Destination: destination, Platform: platform, UpdatedAt: time.Now().UTC()}
+	if s.sessions != nil && sessionID != uuid.Nil {
+		active, err := s.sessions.IsActive(ctx, userID, sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("update device: check session: %w", err)
+		}
+		if !active {
+			return nil, pushdevice.ErrInactiveSession
+		}
+	}
+	d := &pushdevice.PushDevice{ID: id, UserID: userID, SessionID: sessionID, SessionGeneration: generation, Destination: destination, Platform: platform, UpdatedAt: time.Now().UTC()}
 	if err := s.devices.Update(ctx, d); err != nil {
 		return nil, fmt.Errorf("update device: %w", err)
 	}
@@ -61,6 +109,10 @@ func (s *Service) RemoveDevice(ctx context.Context, id, userID uuid.UUID) error 
 
 func (s *Service) DeleteAllByUser(ctx context.Context, userID uuid.UUID) error {
 	return s.devices.DeleteAllByUser(ctx, userID)
+}
+
+func (s *Service) DeleteBySession(ctx context.Context, userID, sessionID uuid.UUID) error {
+	return s.devices.DeleteBySession(ctx, userID, sessionID)
 }
 func (s *Service) Send(ctx context.Context, m PushMessage) error {
 	if strings.TrimSpace(m.Destination) == "" {

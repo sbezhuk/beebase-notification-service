@@ -86,7 +86,26 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 	})
 	r.With(internalauth.RequireAuth(internalToken)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
 	r.With(internalauth.RequireAuth(internalToken)).Delete("/internal/api/v1/users/{userID}", h.DeleteUserData)
+	r.With(internalauth.RequireAuth(internalToken)).Delete("/internal/api/v1/users/{userID}/sessions/{sessionID}", h.DeleteSessionData)
 	return r
+}
+
+func (h *Handler) DeleteSessionData(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		httpx.WriteError(w, 400, "invalid_user_id", "invalid user id")
+		return
+	}
+	sessionID, err := uuid.Parse(chi.URLParam(r, "sessionID"))
+	if err != nil {
+		httpx.WriteError(w, 400, "invalid_session_id", "invalid session id")
+		return
+	}
+	if err := h.service.DeleteBySession(r.Context(), userID, sessionID); err != nil {
+		httpx.WriteError(w, 500, "cleanup_failed", "could not delete session devices")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) DeleteUserData(w http.ResponseWriter, r *http.Request) {
@@ -279,8 +298,23 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "missing_identity", "authenticated identity missing")
 		return
 	}
-	d, err := h.service.RegisterDevice(r.Context(), uid, req.Destination, req.Platform)
+	var d *pushdevice.PushDevice
+	var err error
+	if sid, ok := authmw.SessionIDFromContext(r.Context()); ok {
+		generation, generationOK := authmw.SessionGenerationFromContext(r.Context())
+		if !generationOK || generation <= 0 {
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_access_token", "invalid or expired access token")
+			return
+		}
+		d, err = h.service.RegisterDeviceForSession(r.Context(), uid, req.Destination, req.Platform, sid, generation)
+	} else {
+		d, err = h.service.RegisterDevice(r.Context(), uid, req.Destination, req.Platform)
+	}
 	if err != nil {
+		if errors.Is(err, pushdevice.ErrInactiveSession) || errors.Is(err, pushdevice.ErrStaleSession) {
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_access_token", "invalid or expired access token")
+			return
+		}
 		if errors.Is(err, pushdevice.ErrDestinationOwned) {
 			httpx.WriteError(w, http.StatusConflict, "destination_owned", "notification destination is already registered to another user")
 			return
@@ -306,8 +340,22 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_device_id", "invalid device id")
 		return
 	}
-	d, err := h.service.UpdateDevice(r.Context(), uid, id, req.Destination, req.Platform)
+	var d *pushdevice.PushDevice
+	if sid, ok := authmw.SessionIDFromContext(r.Context()); ok {
+		generation, generationOK := authmw.SessionGenerationFromContext(r.Context())
+		if !generationOK || generation <= 0 {
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_access_token", "invalid or expired access token")
+			return
+		}
+		d, err = h.service.UpdateDeviceForSession(r.Context(), uid, id, req.Destination, req.Platform, sid, generation)
+	} else {
+		d, err = h.service.UpdateDevice(r.Context(), uid, id, req.Destination, req.Platform)
+	}
 	if err != nil {
+		if errors.Is(err, pushdevice.ErrInactiveSession) || errors.Is(err, pushdevice.ErrStaleSession) {
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_access_token", "invalid or expired access token")
+			return
+		}
 		if errors.Is(err, pushdevice.ErrNotFound) {
 			http.NotFound(w, r)
 			return

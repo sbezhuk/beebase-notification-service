@@ -47,7 +47,8 @@ func (f *deviceRepoFake) Delete(context.Context, uuid.UUID, uuid.UUID) error {
 func (f *deviceRepoFake) DeleteByDestination(context.Context, string) error {
 	return nil
 }
-func (f *deviceRepoFake) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
+func (f *deviceRepoFake) DeleteAllByUser(context.Context, uuid.UUID) error            { return nil }
+func (f *deviceRepoFake) DeleteBySession(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 
 type senderFake struct{}
 

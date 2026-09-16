@@ -59,15 +59,18 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("build JWKS verifier: %w", err)
 	}
+	if _, ok := any(verifier).(authmw.SessionGenerationAccessTokenParser); !ok {
+		return fmt.Errorf("build JWKS verifier: session-generation support is required")
+	}
 	sender, err := firebase.NewSender(ctx, cfg.FirebaseProjectID, cfg.FirebaseServiceAccountJSON)
 	if err != nil {
 		return fmt.Errorf("initialize Firebase: %w", err)
 	}
 	repo := repopostgres.NewPushDeviceRepository(db)
-	svc := appnotification.NewService(repo, sender)
+	svc := appnotification.NewService(repo, sender, sessions)
 	resolver := entityclient.New(map[reminder.EntityType]string{reminder.EntityApiary: cfg.ApiaryServiceURL, reminder.EntityHive: cfg.HiveServiceURL, reminder.EntityInspection: cfg.InspectionServiceURL, reminder.EntityHarvest: cfg.HarvestServiceURL}, cfg.InternalServiceToken)
 	reminderRepo := repopostgres.NewReminderRepository(db)
-	reminderSvc := appnotification.NewReminderService(reminderRepo, repo, sender, resolver)
+	reminderSvc := appnotification.NewReminderService(reminderRepo, repo, sender, resolver, sessions)
 	go func() {
 		ticker := time.NewTicker(cfg.ReminderWorkerInterval)
 		defer ticker.Stop()

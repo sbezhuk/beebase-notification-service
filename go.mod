@@ -2,6 +2,8 @@ module github.com/sbezhuk/beebase-notification-service
 
 go 1.27.0
 
+replace github.com/sbezhuk/beebase-common => ../beebase-common
+
 require (
 	firebase.google.com/go/v4 v4.21.0
 	github.com/go-chi/chi/v5 v5.3.2

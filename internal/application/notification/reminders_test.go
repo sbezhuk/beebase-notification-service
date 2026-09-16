@@ -151,10 +151,19 @@ func (f *reminderDevicesFake) DeleteByDestination(_ context.Context, d string) e
 	return f.deleteErr
 }
 func (f *reminderDevicesFake) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
+func (f *reminderDevicesFake) DeleteBySession(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
 
 type resolverFake struct {
 	exists bool
 	err    error
+}
+
+type activeSessionFake struct{ active uuid.UUID }
+
+func (f activeSessionFake) IsActive(_ context.Context, _ uuid.UUID, session uuid.UUID) (bool, error) {
+	return session == f.active, nil
 }
 
 func (f resolverFake) Exists(context.Context, reminder.EntityType, uuid.UUID) (bool, error) {
@@ -297,6 +306,26 @@ func TestProcessDueEntityExistsSendsAndIncludesNavigationData(t *testing.T) {
 	}
 	if sender.calls[0].Data["type"] != "reminder" || sender.calls[0].Data["entity_id"] != v.EntityID.String() {
 		t.Fatalf("missing navigation payload: %#v", sender.calls[0].Data)
+	}
+}
+
+func TestProcessDueSendsOnlyToTheCurrentSessionDevice(t *testing.T) {
+	user := uuid.New()
+	oldSession, currentSession := uuid.New(), uuid.New()
+	repo := &reminderRepoFake{}
+	v := newReminder(user)
+	repo.claim = []reminder.Reminder{v}
+	sender := &senderFake{}
+	devices := &reminderDevicesFake{devices: []pushdevice.PushDevice{
+		{UserID: user, SessionID: oldSession, SessionGeneration: 1, Destination: "fid-a"},
+		{UserID: user, SessionID: currentSession, SessionGeneration: 2, Destination: "fid-b"},
+	}}
+	svc := NewReminderService(repo, devices, sender, resolverFake{exists: true}, activeSessionFake{active: currentSession})
+	if err := svc.ProcessDue(context.Background(), time.Now(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.calls) != 1 || sender.calls[0].Destination != "fid-b" {
+		t.Fatalf("push destinations = %#v, want only fid-b", sender.calls)
 	}
 }
 func TestProcessDueDeletedEntityCancelsWithoutSending(t *testing.T) {

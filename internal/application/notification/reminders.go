@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sbezhuk/beebase-common/authmw"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/pushdevice"
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/reminder"
 )
@@ -23,13 +24,18 @@ type ReminderService struct {
 	devices     pushdevice.Repository
 	sender      PushSender
 	resolver    EntityResolver
+	sessions    authmw.SessionChecker
 	maxAttempts int
 }
 
 const processingLease = 5 * time.Minute
 
-func NewReminderService(r reminder.Repository, d pushdevice.Repository, s PushSender, e EntityResolver) *ReminderService {
-	return &ReminderService{reminders: r, devices: d, sender: s, resolver: e, maxAttempts: 5}
+func NewReminderService(r reminder.Repository, d pushdevice.Repository, s PushSender, e EntityResolver, sessions ...authmw.SessionChecker) *ReminderService {
+	var checker authmw.SessionChecker
+	if len(sessions) > 0 {
+		checker = sessions[0]
+	}
+	return &ReminderService{reminders: r, devices: d, sender: s, resolver: e, sessions: checker, maxAttempts: 5}
 }
 
 type CreateReminderInput struct {
@@ -146,6 +152,19 @@ func (s *ReminderService) processOne(ctx context.Context, v reminder.Reminder, n
 		body = v.Title
 	}
 	for _, d := range devices {
+		if s.sessions != nil {
+			if d.SessionID == uuid.Nil || d.SessionGeneration <= 0 {
+				continue
+			}
+			active, checkErr := s.sessions.IsActive(ctx, d.UserID, d.SessionID)
+			if checkErr != nil {
+				last = checkErr
+				continue
+			}
+			if !active {
+				continue
+			}
+		}
 		err = s.sender.Send(ctx, PushMessage{Destination: d.Destination, Title: v.Title, Body: body, Data: map[string]string{"type": "reminder", "reminder_id": v.ID.String(), "entity_type": string(v.EntityType), "entity_id": v.EntityID.String()}})
 		if err == nil {
 			success++
