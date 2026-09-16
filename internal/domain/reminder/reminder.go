@@ -82,6 +82,7 @@ type Repository interface {
 	Update(context.Context, *Reminder) error
 	Delete(context.Context, uuid.UUID, uuid.UUID) error
 	Cleanup(context.Context, []EntityRef) error
+	DeleteAllByUser(context.Context, uuid.UUID) error
 	ClaimDue(context.Context, time.Time, int, time.Duration) ([]Reminder, error)
 	MarkSent(context.Context, uuid.UUID, uuid.UUID) error
 	MarkCancelled(context.Context, uuid.UUID, uuid.UUID, string) error

@@ -30,4 +30,5 @@ type Repository interface {
 	FindByID(ctx context.Context, id, userID uuid.UUID) (*PushDevice, error)
 	Delete(ctx context.Context, id, userID uuid.UUID) error
 	DeleteByDestination(ctx context.Context, destination string) error
+	DeleteAllByUser(ctx context.Context, userID uuid.UUID) error
 }

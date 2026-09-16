@@ -72,6 +72,10 @@ func (s *ReminderService) Get(ctx context.Context, user, id uuid.UUID) (*reminde
 func (s *ReminderService) List(ctx context.Context, user uuid.UUID, f reminder.Filter) ([]reminder.Reminder, int, error) {
 	return s.reminders.List(ctx, user, f)
 }
+
+func (s *ReminderService) DeleteAllByUser(ctx context.Context, userID uuid.UUID) error {
+	return s.reminders.DeleteAllByUser(ctx, userID)
+}
 func (s *ReminderService) Update(ctx context.Context, user, id uuid.UUID, in CreateReminderInput) (*reminder.Reminder, error) {
 	v, err := s.Get(ctx, user, id)
 	if err != nil {

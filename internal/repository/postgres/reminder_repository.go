@@ -98,11 +98,16 @@ func (r *ReminderRepository) Delete(ctx context.Context, id, user uuid.UUID) err
 }
 func (r *ReminderRepository) Cleanup(ctx context.Context, es []reminder.EntityRef) error {
 	for _, e := range es {
-		if _, err := r.db.Exec(ctx, `UPDATE reminders SET status='cancelled',cancel_reason='entity_deleted',processing_token=NULL,processing_lease_until=NULL,updated_at=$3 WHERE entity_type=$1 AND entity_id=$2 AND status NOT IN ('sent','cancelled')`, e.Type, e.ID, time.Now().UTC()); err != nil {
+		if _, err := r.db.Exec(ctx, `DELETE FROM reminders WHERE entity_type=$1 AND entity_id=$2`, e.Type, e.ID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (r *ReminderRepository) DeleteAllByUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM reminders WHERE user_id=$1`, userID)
+	return err
 }
 func (r *ReminderRepository) ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]reminder.Reminder, error) {
 	tx, err := r.db.Begin(ctx)

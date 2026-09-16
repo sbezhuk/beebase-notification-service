@@ -85,7 +85,25 @@ func NewRouter(log *slog.Logger, db *pgxpool.Pool, h *Handler, parser authmw.Acc
 		r.Delete("/{reminderId}", h.DeleteReminder)
 	})
 	r.With(internalauth.RequireAuth(internalToken)).Post("/internal/api/v1/reminders/cleanup", h.CleanupReminders)
+	r.With(internalauth.RequireAuth(internalToken)).Delete("/internal/api/v1/users/{userID}", h.DeleteUserData)
 	return r
+}
+
+func (h *Handler) DeleteUserData(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		httpx.WriteError(w, 400, "invalid_user_id", "invalid user id")
+		return
+	}
+	if err := h.service.DeleteAllByUser(r.Context(), userID); err != nil {
+		httpx.WriteError(w, 500, "cleanup_failed", "could not delete user devices")
+		return
+	}
+	if err := h.reminders.DeleteAllByUser(r.Context(), userID); err != nil {
+		httpx.WriteError(w, 500, "cleanup_failed", "could not delete user reminders")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type reminderRequest struct {

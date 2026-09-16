@@ -75,16 +75,15 @@ func (f *reminderRepoFake) Cleanup(_ context.Context, es []reminder.EntityRef) e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, e := range es {
-		for _, v := range f.items {
-			if v.EntityType == e.Type && v.EntityID == e.ID && v.Status != reminder.StatusSent && v.Status != reminder.StatusCancelled {
-				v.Status = reminder.StatusCancelled
-				r := "entity_deleted"
-				v.CancelReason = &r
+		for id, v := range f.items {
+			if v.EntityType == e.Type && v.EntityID == e.ID {
+				delete(f.items, id)
 			}
 		}
 	}
 	return nil
 }
+func (f *reminderRepoFake) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
 func (f *reminderRepoFake) ClaimDue(_ context.Context, _ time.Time, _ int, lease time.Duration) ([]reminder.Reminder, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -151,6 +150,7 @@ func (f *reminderDevicesFake) DeleteByDestination(_ context.Context, d string) e
 	f.removed = append(f.removed, d)
 	return f.deleteErr
 }
+func (f *reminderDevicesFake) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
 
 type resolverFake struct {
 	exists bool
@@ -453,7 +453,7 @@ func TestCleanupIsIdempotent(t *testing.T) {
 	if err := svc.Cleanup(context.Background(), ref); err != nil {
 		t.Fatal(err)
 	}
-	if repo.items[v.ID].Status != reminder.StatusCancelled {
-		t.Fatalf("cleanup not idempotent")
+	if _, ok := repo.items[v.ID]; ok {
+		t.Fatalf("cleanup did not hard-delete reminder")
 	}
 }

@@ -41,6 +41,7 @@ func (f *fakeRepo) DeleteByDestination(_ context.Context, destination string) er
 	f.deletedDestination = destination
 	return f.deleteErr
 }
+func (f *fakeRepo) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
 func (f *fakeRepo) Delete(_ context.Context, id, user uuid.UUID) error {
 	f.deleted = id
 	if f.device == nil || f.device.UserID != user {

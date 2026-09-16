@@ -58,6 +58,10 @@ func (s *Service) RemoveDevice(ctx context.Context, id, userID uuid.UUID) error 
 	}
 	return nil
 }
+
+func (s *Service) DeleteAllByUser(ctx context.Context, userID uuid.UUID) error {
+	return s.devices.DeleteAllByUser(ctx, userID)
+}
 func (s *Service) Send(ctx context.Context, m PushMessage) error {
 	if strings.TrimSpace(m.Destination) == "" {
 		return fmt.Errorf("destination is required")

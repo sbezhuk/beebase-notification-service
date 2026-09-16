@@ -75,6 +75,11 @@ func (r *PushDeviceRepository) DeleteByDestination(ctx context.Context, destinat
 	return nil
 }
 
+func (r *PushDeviceRepository) DeleteAllByUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM push_devices WHERE user_id=$1`, userID)
+	return err
+}
+
 func (r *PushDeviceRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]pushdevice.PushDevice, error) {
 	rows, err := r.db.Query(ctx, `SELECT id,user_id,destination,platform,created_at,updated_at FROM push_devices WHERE user_id=$1`, userID)
 	if err != nil {

@@ -47,6 +47,7 @@ func (f *deviceRepoFake) Delete(context.Context, uuid.UUID, uuid.UUID) error {
 func (f *deviceRepoFake) DeleteByDestination(context.Context, string) error {
 	return nil
 }
+func (f *deviceRepoFake) DeleteAllByUser(context.Context, uuid.UUID) error { return nil }
 
 type senderFake struct{}
 
@@ -181,6 +182,7 @@ func (f *reminderHTTPRepoFake) Update(_ context.Context, v *reminder.Reminder) e
 }
 func (f *reminderHTTPRepoFake) Delete(context.Context, uuid.UUID, uuid.UUID) error  { return nil }
 func (f *reminderHTTPRepoFake) Cleanup(context.Context, []reminder.EntityRef) error { return nil }
+func (f *reminderHTTPRepoFake) DeleteAllByUser(context.Context, uuid.UUID) error    { return nil }
 func (f *reminderHTTPRepoFake) ClaimDue(context.Context, time.Time, int, time.Duration) ([]reminder.Reminder, error) {
 	return nil, nil
 }
