@@ -72,6 +72,7 @@ type Filter struct {
 	EntityType  *EntityType
 	EntityID    *uuid.UUID
 	Status      *Status
+	Statuses    []Status
 	Page, Limit int
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/sbezhuk/beebase-notification-service/internal/domain/reminder"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -205,13 +206,27 @@ func (h *Handler) ListReminders(w http.ResponseWriter, r *http.Request) {
 		}
 		f.EntityID = &v
 	}
-	if x := q.Get("status"); x != "" {
-		v := reminder.Status(x)
-		if v != reminder.StatusScheduled && v != reminder.StatusProcessing && v != reminder.StatusSent && v != reminder.StatusCancelled && v != reminder.StatusFailed {
-			httpx.WriteError(w, 400, "invalid_status", "invalid reminder status")
-			return
+	if rawStatuses := q["status"]; len(rawStatuses) > 0 {
+		var validStatuses []reminder.Status
+		for _, raw := range rawStatuses {
+			for _, part := range strings.Split(raw, ",") {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				v := reminder.Status(part)
+				if v != reminder.StatusScheduled && v != reminder.StatusProcessing && v != reminder.StatusSent && v != reminder.StatusCancelled && v != reminder.StatusFailed {
+					httpx.WriteError(w, 400, "invalid_status", "invalid reminder status")
+					return
+				}
+				validStatuses = append(validStatuses, v)
+			}
 		}
-		f.Status = &v
+		if len(validStatuses) == 1 {
+			f.Status = &validStatuses[0]
+		} else if len(validStatuses) > 1 {
+			f.Statuses = validStatuses
+		}
 	}
 	items, total, e := h.reminders.List(r.Context(), uid, f)
 	if e != nil {

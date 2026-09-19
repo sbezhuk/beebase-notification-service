@@ -153,7 +153,8 @@ func assertPushDeviceResponseKeys(t *testing.T, body []byte) {
 }
 
 type reminderHTTPRepoFake struct {
-	items map[uuid.UUID]*reminder.Reminder
+	items      map[uuid.UUID]*reminder.Reminder
+	lastFilter reminder.Filter
 }
 
 func (f *reminderHTTPRepoFake) Create(_ context.Context, v *reminder.Reminder) error {
@@ -171,7 +172,8 @@ func (f *reminderHTTPRepoFake) Get(_ context.Context, id, user uuid.UUID) (*remi
 	copy := *v
 	return &copy, nil
 }
-func (f *reminderHTTPRepoFake) List(context.Context, uuid.UUID, reminder.Filter) ([]reminder.Reminder, int, error) {
+func (f *reminderHTTPRepoFake) List(_ context.Context, _ uuid.UUID, filter reminder.Filter) ([]reminder.Reminder, int, error) {
+	f.lastFilter = filter
 	return nil, 0, nil
 }
 func (f *reminderHTTPRepoFake) Update(_ context.Context, v *reminder.Reminder) error {
@@ -269,3 +271,46 @@ func TestReminderHTTPRejectsTimezoneLessAndPastRemindAt(t *testing.T) {
 		})
 	}
 }
+
+func TestListRemindersParsesMultiStatusQuery(t *testing.T) {
+	userID := uuid.New()
+	repo := &reminderHTTPRepoFake{}
+	router := newReminderTestRouter(userID, repo)
+
+	req1 := httptest.NewRequest(stdhttp.MethodGet, "/api/v1/reminders/?status=scheduled&status=sent", nil)
+	req1.Header.Set("Authorization", "Bearer test-token")
+	rr1 := httptest.NewRecorder()
+	router.ServeHTTP(rr1, req1)
+	if rr1.Code != stdhttp.StatusOK {
+		t.Fatalf("repeated status query failed: code=%d, body=%s", rr1.Code, rr1.Body.String())
+	}
+	if len(repo.lastFilter.Statuses) != 2 || repo.lastFilter.Statuses[0] != reminder.StatusScheduled || repo.lastFilter.Statuses[1] != reminder.StatusSent {
+		t.Fatalf("expected Statuses=[scheduled, sent], got %v", repo.lastFilter.Statuses)
+	}
+
+	req2 := httptest.NewRequest(stdhttp.MethodGet, "/api/v1/reminders/?status=scheduled,sent", nil)
+	req2.Header.Set("Authorization", "Bearer test-token")
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != stdhttp.StatusOK {
+		t.Fatalf("comma-separated status query failed: code=%d, body=%s", rr2.Code, rr2.Body.String())
+	}
+	if len(repo.lastFilter.Statuses) != 2 || repo.lastFilter.Statuses[0] != reminder.StatusScheduled || repo.lastFilter.Statuses[1] != reminder.StatusSent {
+		t.Fatalf("expected Statuses=[scheduled, sent], got %v", repo.lastFilter.Statuses)
+	}
+
+	req3 := httptest.NewRequest(stdhttp.MethodGet, "/api/v1/reminders/?status=scheduled", nil)
+	req3.Header.Set("Authorization", "Bearer test-token")
+	rr3 := httptest.NewRecorder()
+	router.ServeHTTP(rr3, req3)
+	if rr3.Code != stdhttp.StatusOK {
+		t.Fatalf("single status query failed: code=%d, body=%s", rr3.Code, rr3.Body.String())
+	}
+	if repo.lastFilter.Status == nil || *repo.lastFilter.Status != reminder.StatusScheduled {
+		t.Fatalf("expected Status=scheduled, got %v", repo.lastFilter.Status)
+	}
+	if len(repo.lastFilter.Statuses) != 0 {
+		t.Fatalf("expected empty Statuses, got %v", repo.lastFilter.Statuses)
+	}
+}
+

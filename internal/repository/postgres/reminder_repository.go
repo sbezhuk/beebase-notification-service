@@ -57,7 +57,15 @@ func (r *ReminderRepository) List(ctx context.Context, user uuid.UUID, f reminde
 		args = append(args, *f.EntityID)
 		n++
 	}
-	if f.Status != nil {
+	if len(f.Statuses) > 0 {
+		placeholders := make([]string, len(f.Statuses))
+		for i, s := range f.Statuses {
+			placeholders[i] = fmt.Sprintf("$%d", n)
+			args = append(args, s)
+			n++
+		}
+		where = append(where, fmt.Sprintf("status IN (%s)", strings.Join(placeholders, ",")))
+	} else if f.Status != nil {
 		where = append(where, fmt.Sprintf("status=$%d", n))
 		args = append(args, *f.Status)
 		n++
